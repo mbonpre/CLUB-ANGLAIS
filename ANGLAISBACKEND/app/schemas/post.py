@@ -1,16 +1,31 @@
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, List
 from datetime import datetime
 from app.models.post import PostType
 
-# Schéma simplifié de l'auteur pour éviter d'exposer des données sensibles
-class AuthorOut(BaseModel):
+
+# Auteur public — sans email, même logique que pour les projets (endpoint public)
+class AuthorPublic(BaseModel):
     id: int
     full_name: str
-    email: str
 
     class Config:
         from_attributes = True
+
+
+class CommentCreate(BaseModel):
+    text: str
+
+
+class CommentResponse(BaseModel):
+    id: int
+    text: str
+    created_at: datetime
+    author: AuthorPublic
+
+    class Config:
+        from_attributes = True
+
 
 class PostBase(BaseModel):
     title: str
@@ -18,14 +33,18 @@ class PostBase(BaseModel):
     image_url: Optional[str] = None
     post_type: PostType = PostType.COMMUNITY
 
+
 class PostCreate(PostBase):
     pass
+
 
 class PostResponse(PostBase):
     id: int
     author_id: int
     created_at: datetime
-    author: AuthorOut  # Inclut les détails de l'auteur dans la réponse
+    author: AuthorPublic
+    likes_count: int = 0
+    comments: List[CommentResponse] = []
 
     class Config:
         from_attributes = True

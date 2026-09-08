@@ -30,6 +30,7 @@ def create_access_token(data: dict) -> str:
     expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     to_encode.update({"exp": expire})
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+
 # Schéma d'authentification OAuth2
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/login")
 
@@ -47,10 +48,19 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
             raise credentials_exception
     except Exception:
         raise credentials_exception
-        
     user = db.query(User).filter(User.id == int(user_id)).first()
     if user is None:
         raise credentials_exception
+
+    # NOUVEAU — coupe l'accès immédiatement si le compte a été banni,
+    # même si le token JWT est encore valide (jusqu'ici il fallait attendre son expiration)
+    if not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Ce compte a été suspendu par un administrateur.",
+        )
+
     return user
+
 # Alias pour assurer la compatibilité avec le reste du code
 get_password_hash = hash_password

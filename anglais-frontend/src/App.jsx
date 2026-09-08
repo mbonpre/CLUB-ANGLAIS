@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react';
-import Login from './pages/Login.jsx';
 import Dashboard from './pages/Dashboard.jsx';
 
 export default function App() {
@@ -17,9 +16,11 @@ export default function App() {
     setIsAuthenticated(false);
   };
 
-  if (!isAuthenticated) {
-    return <Login onLoginSuccess={() => setIsAuthenticated(true)} />;
-  }
-
-  return <Dashboard onLogout={handleLogout} />;
+  return (
+    <Dashboard
+      isAuthenticated={isAuthenticated}
+      onLoginSuccess={() => setIsAuthenticated(true)}
+      onLogout={handleLogout}
+    />
+  );
 }

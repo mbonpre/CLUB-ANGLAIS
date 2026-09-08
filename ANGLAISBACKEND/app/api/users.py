@@ -22,7 +22,6 @@ def update_user_me(
         current_user.bio = profile_data.bio
     if profile_data.skills is not None:
         current_user.skills = profile_data.skills
-    
     db.commit()
     db.refresh(current_user)
     return current_user
@@ -40,7 +39,6 @@ def promote_user(
             status_code=status.HTTP_403_FORBIDDEN, 
             detail="Un Community Manager ne peut pas nommer un Admin ou un Coach."
         )
-    
     if current_user.role not in [UserRole.ADMIN, UserRole.COMMUNITY_MANAGER]:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN, 
