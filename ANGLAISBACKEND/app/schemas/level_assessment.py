@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from typing import Optional, Dict
+from typing import Optional, Dict, List
 from datetime import datetime
 
 class AuthorPublic(BaseModel):
@@ -9,7 +9,7 @@ class AuthorPublic(BaseModel):
         from_attributes = True
 
 class SubmitAnswers(BaseModel):
-    answers: Dict[int, int]  # {question_id: chosen_option_index}
+    answers: Dict[int, int]
 
 class AssessmentResult(BaseModel):
     id: int
@@ -31,3 +31,32 @@ class PendingAssessmentResponse(BaseModel):
 
 class ValidateAssessment(BaseModel):
     final_level: str
+
+class QuestionPublic(BaseModel):
+    id: int
+    text: str
+    options: List[str]
+
+class QuestionAdmin(BaseModel):
+    id: int
+    text: str
+    options: List[str]
+    correct_index: int
+    level: str
+    is_active: bool
+    class Config:
+        from_attributes = True
+
+class QuestionCreate(BaseModel):
+    text: str
+    options: List[str]
+    correct_index: int
+    level: str
+    is_active: bool = True
+
+class QuestionUpdate(BaseModel):
+    text: str
+    options: List[str]
+    correct_index: int
+    level: str
+    is_active: bool
