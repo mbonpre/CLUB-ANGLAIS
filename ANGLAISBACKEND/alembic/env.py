@@ -8,8 +8,10 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from app.database import Base, SQLALCHEMY_DATABASE_URL
 # Importe TOUS les modèles pour qu'Alembic les voie dans Base.metadata
-# (room ajouté — oublié précédemment, c'est pour ça que les salons n'étaient pas détectés)
-from app.models import user, post, message, project, account_request, level_history, room
+from app.models import (
+    user, post, message, project, account_request, level_history, room,
+    level_assessment, assessment_question, section_history
+)
 
 config = context.config
 config.set_main_option("sqlalchemy.url", SQLALCHEMY_DATABASE_URL)
@@ -27,7 +29,7 @@ def run_migrations_offline() -> None:
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
-        render_as_batch=True,  # NOUVEAU — nécessaire pour que SQLite gère les ALTER COLUMN
+        render_as_batch=True,
     )
     with context.begin_transaction():
         context.run_migrations()
@@ -43,7 +45,7 @@ def run_migrations_online() -> None:
         context.configure(
             connection=connection,
             target_metadata=target_metadata,
-            render_as_batch=True,  # NOUVEAU — idem, évite le "near ALTER: syntax error" sur SQLite
+            render_as_batch=True,
         )
         with context.begin_transaction():
             context.run_migrations()
