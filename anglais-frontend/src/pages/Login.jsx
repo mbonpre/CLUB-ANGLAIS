@@ -6,6 +6,7 @@ export default function Login({ onLoginSuccess }) {
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
 
   // Demande de compte
@@ -13,6 +14,7 @@ export default function Login({ onLoginSuccess }) {
   const [reqEmail, setReqEmail] = useState('');
   const [reqSection, setReqSection] = useState('debate');
   const [reqPassword, setReqPassword] = useState('');
+  const [showReqPassword, setShowReqPassword] = useState(false);
   const [loginSection, setLoginSection] = useState('debate');
   const [reqMessage, setReqMessage] = useState('');
   const [reqSuccess, setReqSuccess] = useState('');
@@ -80,9 +82,9 @@ export default function Login({ onLoginSuccess }) {
   };
 
   return (
-    <div className="flex justify-center items-center min-h-[80vh]">
-      <div className="bg-white p-8 rounded-lg shadow-sm border border-slate-200 w-full max-w-md">
-        <h2 className="text-xl font-bold mb-6 text-center text-slate-900">
+    <div className="flex justify-center items-center min-h-[80vh] px-4">
+      <div className="bg-white p-5 sm:p-8 rounded-lg shadow-sm border border-slate-200 w-full max-w-md">
+        <h2 className="text-lg sm:text-xl font-bold mb-6 text-center text-slate-900">
           {mode === 'request' ? "Demander un accès au club" : "Club d'Anglais — Connexion"}
         </h2>
 
@@ -120,8 +122,25 @@ export default function Login({ onLoginSuccess }) {
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Choisis un mot de passe</label>
-              <input type="password" value={reqPassword} onChange={(e) => setReqPassword(e.target.value)}
-                className="w-full p-2.5 border border-slate-200 rounded text-sm focus:outline-none focus:ring-2 focus:ring-red-500" required minLength={6} />
+              <div className="relative">
+                <input
+                  type={showReqPassword ? 'text' : 'password'}
+                  value={reqPassword}
+                  onChange={(e) => setReqPassword(e.target.value)}
+                  className="w-full p-2.5 pr-10 border border-slate-200 rounded text-sm focus:outline-none focus:ring-2 focus:ring-red-500"
+                  required
+                  minLength={6}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowReqPassword(!showReqPassword)}
+                  className="absolute inset-y-0 right-0 flex items-center px-3 text-slate-400 hover:text-slate-600"
+                  aria-label={showReqPassword ? 'Masquer le mot de passe' : 'Afficher le mot de passe'}
+                  tabIndex={-1}
+                >
+                  {showReqPassword ? '🙈' : '👁️'}
+                </button>
+              </div>
               <p className="text-[11px] text-slate-400 mt-1">Utilisable seulement si ta demande est approuvée.</p>
             </div>
             <div>
@@ -163,8 +182,24 @@ export default function Login({ onLoginSuccess }) {
                 </div>
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Mot de passe</label>
-              <input type="password" value={password} onChange={(e) => setPassword(e.target.value)}
-                className="w-full p-2.5 border border-slate-200 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" required />
+              <div className="relative">
+                <input
+                  type={showPassword ? 'text' : 'password'}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="w-full p-2.5 pr-10 border border-slate-200 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  required
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute inset-y-0 right-0 flex items-center px-3 text-slate-400 hover:text-slate-600"
+                  aria-label={showPassword ? 'Masquer le mot de passe' : 'Afficher le mot de passe'}
+                  tabIndex={-1}
+                >
+                  {showPassword ? '🙈' : '👁️'}
+                </button>
+              </div>
             </div>
             <button type="submit" className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold p-2.5 rounded text-sm transition">
               Se connecter

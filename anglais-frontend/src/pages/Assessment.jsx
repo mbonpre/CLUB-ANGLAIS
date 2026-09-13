@@ -44,9 +44,9 @@ export default function Assessment() {
 
   if (result) {
     return (
-      <div className="max-w-lg mx-auto bg-white rounded-lg shadow-sm border border-slate-200 p-8 text-center">
+      <div className="max-w-lg mx-auto bg-white rounded-lg shadow-sm border border-slate-200 p-5 sm:p-8 text-center">
         <p className="text-4xl mb-3">📊</p>
-        <h2 className="text-xl font-bold text-slate-900 mb-2">Résultat de ton test</h2>
+        <h2 className="text-lg sm:text-xl font-bold text-slate-900 mb-2">Résultat de ton test</h2>
         <p className="text-sm text-slate-500 mb-4">{result.score} / {result.total_questions} bonnes réponses</p>
         <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-4 mb-4">
           <p className="text-xs text-emerald-700 font-semibold uppercase mb-1">Ton niveau a été mis à jour</p>
@@ -60,23 +60,23 @@ export default function Assessment() {
   }
 
   return (
-    <div className="max-w-2xl mx-auto space-y-6">
-      <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-6">
-        <h2 className="text-xl font-bold text-slate-900 mb-1">📝 Test d'évaluation de niveau</h2>
+    <div className="max-w-2xl mx-auto space-y-4 sm:space-y-6">
+      <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-4 sm:p-6">
+        <h2 className="text-lg sm:text-xl font-bold text-slate-900 mb-1">📝 Test d'évaluation de niveau</h2>
         <p className="text-sm text-slate-500">Réponds à ces {questions.length} questions. Le résultat sera d'abord calculé automatiquement, puis confirmé par un administrateur.</p>
       </div>
 
       {error && <div className="p-3 bg-red-50 border border-red-200 text-red-600 text-sm rounded">{error}</div>}
 
-      <form onSubmit={handleSubmit} className="space-y-4">
+      <form onSubmit={handleSubmit} className="space-y-3 sm:space-y-4">
         {questions.map((q, idx) => (
-          <div key={q.id} className="bg-white rounded-lg shadow-sm border border-slate-200 p-5">
-            <p className="font-semibold text-slate-900 mb-3">{idx + 1}. {q.text}</p>
+          <div key={q.id} className="bg-white rounded-lg shadow-sm border border-slate-200 p-4 sm:p-5">
+            <p className="font-semibold text-slate-900 mb-3 text-sm sm:text-base">{idx + 1}. {q.text}</p>
             <div className="space-y-2">
               {q.options.map((opt, optIdx) => (
                 <label key={optIdx} className={`flex items-center gap-2 p-2 rounded-lg border cursor-pointer text-sm ${answers[q.id] === optIdx ? 'border-blue-600 bg-blue-50' : 'border-slate-200 hover:bg-slate-50'}`}>
-                  <input type="radio" name={`q-${q.id}`} checked={answers[q.id] === optIdx} onChange={() => setAnswers({ ...answers, [q.id]: optIdx })} className="accent-blue-600" />
-                  {opt}
+                  <input type="radio" name={`q-${q.id}`} checked={answers[q.id] === optIdx} onChange={() => setAnswers({ ...answers, [q.id]: optIdx })} className="accent-blue-600 shrink-0" />
+                  <span className="break-words">{opt}</span>
                 </label>
               ))}
             </div>

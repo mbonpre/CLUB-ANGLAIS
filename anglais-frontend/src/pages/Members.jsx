@@ -50,16 +50,16 @@ export default function Members() {
   });
 
   return (
-    <div className="space-y-6">
-      <div className="bg-white p-6 rounded-lg shadow-sm border border-slate-200 flex flex-col md:flex-row justify-between items-center gap-4">
+    <div className="space-y-4 sm:space-y-6">
+      <div className="bg-white p-4 sm:p-6 rounded-lg shadow-sm border border-slate-200 flex flex-col md:flex-row justify-between items-start md:items-center gap-3 sm:gap-4">
         <div>
-          <h2 className="text-xl font-bold text-slate-900">Annuaire des Membres 👥</h2>
+          <h2 className="text-lg sm:text-xl font-bold text-slate-900">Annuaire des Membres 👥</h2>
           <p className="text-sm text-slate-500">Consultez la liste des membres et leurs niveaux d'anglais.</p>
         </div>
-        <div className="flex gap-3 w-full md:w-auto">
+        <div className="flex gap-2 sm:gap-3 w-full md:w-auto">
           <input type="text" placeholder="Rechercher..." value={search} onChange={(e) => setSearch(e.target.value)}
-            className="p-2 border border-slate-200 rounded text-sm focus:outline-none focus:ring-2 focus:ring-red-500 flex-1 md:w-64" />
-          <select value={levelFilter} onChange={(e) => setLevelFilter(e.target.value)} className="p-2 border border-slate-200 rounded text-sm bg-white">
+            className="p-2 border border-slate-200 rounded text-sm focus:outline-none focus:ring-2 focus:ring-red-500 flex-1 min-w-0 md:w-64" />
+          <select value={levelFilter} onChange={(e) => setLevelFilter(e.target.value)} className="shrink-0 p-2 border border-slate-200 rounded text-xs sm:text-sm bg-white">
             <option value="">Tous les niveaux</option>
             {['A1','A2','B1','B2','C1','C2'].map(l => <option key={l} value={l}>{l}</option>)}
           </select>
@@ -68,23 +68,23 @@ export default function Members() {
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {loading ? (
-          <p className="col-span-3 text-center text-slate-500 py-8">Chargement...</p>
+          <p className="col-span-full text-center text-slate-500 py-8">Chargement...</p>
         ) : filteredMembers.length === 0 ? (
-          <p className="col-span-3 text-center text-slate-500 py-8 bg-white p-6 rounded-lg border border-slate-200">Aucun membre trouvé.</p>
+          <p className="col-span-full text-center text-slate-500 py-8 bg-white p-6 rounded-lg border border-slate-200">Aucun membre trouvé.</p>
         ) : (
           filteredMembers.map(member => (
-            <div key={member.id} className="bg-white p-5 rounded-lg shadow-sm border border-slate-200 flex flex-col justify-between">
+            <div key={member.id} className="bg-white p-4 sm:p-5 rounded-lg shadow-sm border border-slate-200 flex flex-col justify-between">
               <div>
-                <div className="flex justify-between items-start mb-3">
-                  <h3 className="font-bold text-slate-900">{member.full_name || "Utilisateur"}</h3>
-                  <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-red-50 text-red-700 border border-red-100">{member.english_level || 'A1'}</span>
+                <div className="flex justify-between items-start gap-2 mb-3">
+                  <h3 className="font-bold text-slate-900 min-w-0 break-words">{member.full_name || "Utilisateur"}</h3>
+                  <span className="shrink-0 text-xs font-semibold px-2.5 py-1 rounded-full bg-red-50 text-red-700 border border-red-100">{member.english_level || 'A1'}</span>
                 </div>
-                <p className="text-xs text-slate-500 mb-4">{member.email}</p>
+                <p className="text-xs text-slate-500 mb-4 break-words">{member.email}</p>
               </div>
 
               {isStaff && (
-                <div className="pt-3 border-t border-slate-100 flex items-center justify-between">
-                  <span className="text-xs font-medium text-slate-600">Niveau officiel :</span>
+                <div className="pt-3 border-t border-slate-100 flex items-center justify-between gap-2">
+                  <span className="text-xs font-medium text-slate-600 shrink-0">Niveau officiel :</span>
                   <select
                     value={member.english_level || 'A1'}
                     disabled={editingId === member.id}

@@ -382,26 +382,26 @@ export default function AdminPanel() {
   };
 
   return (
-    <div className="space-y-6">
-      <div className="bg-slate-900 text-white rounded-lg p-5 flex items-center justify-between">
+    <div className="space-y-4 sm:space-y-6">
+      <div className="bg-slate-900 text-white rounded-lg p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
-          <h1 className="text-xl font-black">Espace Administration</h1>
+          <h1 className="text-lg sm:text-xl font-black">Espace Administration</h1>
           <p className="text-sm text-slate-400">Gestion du club et suivi des statistiques</p>
         </div>
-        <div className="flex gap-2">
-          <button onClick={() => setTab('operationnel')} className={`px-4 py-2 rounded text-sm font-bold transition ${tab === 'operationnel' ? 'bg-red-600' : 'bg-white/10 hover:bg-white/20'}`}>
+        <div className="grid grid-cols-2 sm:flex gap-2">
+          <button onClick={() => setTab('operationnel')} className={`px-3 sm:px-4 py-2 rounded text-xs sm:text-sm font-bold transition ${tab === 'operationnel' ? 'bg-red-600' : 'bg-white/10 hover:bg-white/20'}`}>
             Gestion Opérationnelle
           </button>
-          <button onClick={() => setTab('stats')} className={`px-4 py-2 rounded text-sm font-bold transition ${tab === 'stats' ? 'bg-red-600' : 'bg-white/10 hover:bg-white/20'}`}>
+          <button onClick={() => setTab('stats')} className={`px-3 sm:px-4 py-2 rounded text-xs sm:text-sm font-bold transition ${tab === 'stats' ? 'bg-red-600' : 'bg-white/10 hover:bg-white/20'}`}>
             Statistiques & Analyses
           </button>
         </div>
       </div>
 
       {tab === 'operationnel' && (
-        <div className="space-y-6">
+        <div className="space-y-4 sm:space-y-6">
           {currentUser?.is_super_admin && (
-            <div className="bg-white rounded-lg shadow-sm border border-purple-200 p-5">
+            <div className="bg-white rounded-lg shadow-sm border border-purple-200 p-4 sm:p-5">
               <h2 className="font-bold text-slate-900 mb-3">👑 Créer un nouveau Super Admin</h2>
               {saFeedback && <p className="text-xs mb-2">{saFeedback}</p>}
               <form onSubmit={handleCreateSuperAdmin} className="space-y-2">
@@ -412,14 +412,14 @@ export default function AdminPanel() {
                 <input type="password" placeholder="Mot de passe" value={saPassword} onChange={(e) => setSaPassword(e.target.value)}
                   className="w-full p-2 border border-slate-200 rounded text-sm" required minLength={6} />
                 <button type="submit" disabled={saSubmitting}
-                  className="bg-purple-600 hover:bg-purple-700 text-white font-bold px-4 py-2 rounded text-sm transition disabled:opacity-50">
+                  className="w-full sm:w-auto bg-purple-600 hover:bg-purple-700 text-white font-bold px-4 py-2 rounded text-sm transition disabled:opacity-50">
                   {saSubmitting ? 'Création...' : 'Créer ce Super Admin'}
                 </button>
               </form>
             </div>
           )}
 
-          <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-5">
+          <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-4 sm:p-5">
             <h2 className="font-bold text-slate-900 mb-3">
               Demandes de compte en attente {requests.length > 0 && <span className="text-red-600">({requests.length})</span>}
             </h2>
@@ -430,16 +430,16 @@ export default function AdminPanel() {
             ) : (
               <div className="space-y-3">
                 {requests.map(req => (
-                  <div key={req.id} className="flex items-center justify-between p-3 border border-slate-200 rounded-lg">
-                    <div>
-                      <p className="font-semibold text-sm text-slate-900">
+                  <div key={req.id} className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 p-3 border border-slate-200 rounded-lg">
+                    <div className="min-w-0">
+                      <p className="font-semibold text-sm text-slate-900 break-words">
                         {req.full_name} — {req.email}
                       </p>
-                      {req.message && <p className="text-xs text-slate-500 italic mt-0.5">"{req.message}"</p>}
+                      {req.message && <p className="text-xs text-slate-500 italic mt-0.5 break-words">"{req.message}"</p>}
                     </div>
                     <div className="flex gap-2 shrink-0">
-                      <button onClick={() => handleApprove(req.id)} disabled={requestActionId === req.id} className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-3 py-1.5 rounded transition disabled:opacity-50">Approuver</button>
-                      <button onClick={() => handleReject(req.id)} disabled={requestActionId === req.id} className="bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-bold px-3 py-1.5 rounded transition disabled:opacity-50">Refuser</button>
+                      <button onClick={() => handleApprove(req.id)} disabled={requestActionId === req.id} className="flex-1 sm:flex-none bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-3 py-1.5 rounded transition disabled:opacity-50">Approuver</button>
+                      <button onClick={() => handleReject(req.id)} disabled={requestActionId === req.id} className="flex-1 sm:flex-none bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-bold px-3 py-1.5 rounded transition disabled:opacity-50">Refuser</button>
                     </div>
                   </div>
                 ))}
@@ -447,7 +447,7 @@ export default function AdminPanel() {
             )}
           </div>
 
-          <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-5">
+          <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-4 sm:p-5">
             <h2 className="font-bold text-slate-900 mb-3">
               🎓 Évaluations de niveau à valider {pendingAssessments.length > 0 && <span className="text-red-600">({pendingAssessments.length})</span>}
             </h2>
@@ -456,12 +456,12 @@ export default function AdminPanel() {
             ) : (
               <div className="space-y-3">
                 {pendingAssessments.map(a => (
-                  <div key={a.id} className="flex items-center justify-between p-3 border border-slate-200 rounded-lg">
-                    <div>
+                  <div key={a.id} className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 p-3 border border-slate-200 rounded-lg">
+                    <div className="min-w-0">
                       <p className="font-semibold text-sm text-slate-900">{a.user.full_name}</p>
                       <p className="text-xs text-slate-500">Score : {a.score}/{a.total_questions} — Suggestion machine : <strong className="text-blue-700">{a.suggested_level}</strong></p>
                     </div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 shrink-0">
                       <select
                         defaultValue={a.suggested_level}
                         onChange={(e) => (a._chosen = e.target.value)}
@@ -483,22 +483,22 @@ export default function AdminPanel() {
             )}
           </div>
 
-          <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-5">
-            <div className="flex justify-between items-center mb-3">
+          <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-4 sm:p-5">
+            <div className="flex flex-wrap justify-between items-center gap-2 mb-3">
               <h2 className="font-bold text-slate-900">🧩 Questions du test de niveau ({questions.length})</h2>
               <button onClick={() => { resetQuestionForm(); setShowQuestionForm(true); }} className="bg-red-600 hover:bg-red-700 text-white text-xs font-bold px-3 py-1.5 rounded transition">+ Ajouter</button>
             </div>
 
             {showQuestionForm && (
-              <form onSubmit={handleSaveQuestion} className="mb-4 p-4 border border-slate-200 rounded-lg space-y-2 bg-slate-50">
+              <form onSubmit={handleSaveQuestion} className="mb-4 p-3 sm:p-4 border border-slate-200 rounded-lg space-y-2 bg-slate-50">
                 <input type="text" placeholder="Texte de la question" value={qText} onChange={(e) => setQText(e.target.value)} className="w-full p-2 border border-slate-200 rounded text-sm" required />
                 {qOptions.map((opt, idx) => (
                   <div key={idx} className="flex items-center gap-2">
-                    <input type="radio" checked={qCorrect === idx} onChange={() => setQCorrect(idx)} title="Bonne réponse" />
-                    <input type="text" placeholder={`Option ${idx + 1}`} value={opt} onChange={(e) => { const n = [...qOptions]; n[idx] = e.target.value; setQOptions(n); }} className="flex-1 p-1.5 border border-slate-200 rounded text-xs" required />
+                    <input type="radio" checked={qCorrect === idx} onChange={() => setQCorrect(idx)} title="Bonne réponse" className="shrink-0" />
+                    <input type="text" placeholder={`Option ${idx + 1}`} value={opt} onChange={(e) => { const n = [...qOptions]; n[idx] = e.target.value; setQOptions(n); }} className="flex-1 min-w-0 p-1.5 border border-slate-200 rounded text-xs" required />
                   </div>
                 ))}
-                <div className="flex gap-2">
+                <div className="flex flex-wrap gap-2">
                   <select value={qLevel} onChange={(e) => setQLevel(e.target.value)} className="p-1.5 border border-slate-200 rounded text-xs bg-white">
                     {['A1','A2','B1','B2','C1','C2'].map(l => <option key={l} value={l}>{l}</option>)}
                   </select>
@@ -519,7 +519,7 @@ export default function AdminPanel() {
 
             <div className="space-y-2 max-h-72 overflow-y-auto">
               {questions.map(q => (
-                <div key={q.id} className="flex items-center justify-between p-2.5 border border-slate-100 rounded-lg">
+                <div key={q.id} className="flex items-center justify-between gap-2 p-2.5 border border-slate-100 rounded-lg">
                   <div className="min-w-0">
                     <p className="text-sm font-medium text-slate-800 truncate">{q.text}</p>
                     <p className="text-[10px] text-slate-400">
@@ -536,7 +536,7 @@ export default function AdminPanel() {
             </div>
           </div>
 
-          <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-5">
+          <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-4 sm:p-5">
             <h2 className="font-bold text-slate-900 mb-3">📢 Envoyer une annonce officielle</h2>
             {announceFeedback && <p className="text-xs mb-2">{announceFeedback}</p>}
             <form onSubmit={handleSendAnnouncement} className="space-y-2">
@@ -544,13 +544,13 @@ export default function AdminPanel() {
                 className="w-full p-2 border border-slate-200 rounded text-sm focus:outline-none focus:ring-2 focus:ring-red-500" required />
               <textarea placeholder="Contenu..." value={announceContent} onChange={(e) => setAnnounceContent(e.target.value)}
                 className="w-full p-2 border border-slate-200 rounded text-sm h-20 resize-none focus:outline-none focus:ring-2 focus:ring-red-500" required />
-              <button type="submit" disabled={announceSubmitting} className="bg-red-600 hover:bg-red-700 text-white text-sm font-bold px-4 py-2 rounded transition disabled:opacity-50">
+              <button type="submit" disabled={announceSubmitting} className="w-full sm:w-auto bg-red-600 hover:bg-red-700 text-white text-sm font-bold px-4 py-2 rounded transition disabled:opacity-50">
                 {announceSubmitting ? 'Envoi...' : 'Publier dans le flux officiel'}
               </button>
             </form>
           </div>
 
-          <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-5">
+          <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-4 sm:p-5">
             <h2 className="font-bold text-slate-900 mb-3">Membres ({filteredMembers.length}/{members.length})</h2>
             <input
               type="text" value={memberSearch} onChange={(e) => setMemberSearch(e.target.value)}
@@ -560,8 +560,8 @@ export default function AdminPanel() {
             {loadingMembers ? (
               <p className="text-sm text-slate-500">Chargement...</p>
             ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
+              <div className="overflow-x-auto -mx-4 sm:mx-0 px-4 sm:px-0">
+                <table className="w-full text-sm min-w-[720px] sm:min-w-0">
                   <thead>
                     <tr className="text-left text-xs uppercase text-slate-400 border-b border-slate-100">
                       <th className="pb-2">Nom</th><th className="pb-2">Email</th><th className="pb-2">Rôle</th><th className="pb-2">Section</th><th className="pb-2">Niveau</th><th className="pb-2">Statut</th><th className="pb-2">Supprimer</th>
@@ -644,15 +644,15 @@ export default function AdminPanel() {
             )}
           </div>
 
-          <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-5">
+          <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-4 sm:p-5">
             <h2 className="font-bold text-slate-900 mb-3">Salons de discussion ({manageRooms.length})</h2>
             {manageRooms.length === 0 ? (
               <p className="text-sm text-slate-400 italic">Aucun salon créé pour le moment (crée-en un depuis la Messagerie).</p>
             ) : (
               <div className="space-y-2">
                 {manageRooms.map(room => (
-                  <div key={room.id} className="flex items-center justify-between p-2.5 border border-slate-100 rounded-lg">
-                    <div>
+                  <div key={room.id} className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 p-2.5 border border-slate-100 rounded-lg">
+                    <div className="min-w-0">
                       <span className="inline-block w-2 h-2 rounded-full mr-1.5" style={{ background: room.color || '#DC2626' }}></span>
                       <span className="text-sm font-semibold text-slate-800">#{room.name}</span>
                       {room.is_closed && <span className="ml-2 text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded">Fermé</span>}
@@ -661,12 +661,12 @@ export default function AdminPanel() {
                     <div className="flex gap-2 shrink-0">
                       {!room.is_closed && (
                         <button onClick={() => handleCloseRoom(room)} disabled={closingRoomId === room.id}
-                          className="bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold px-3 py-1.5 rounded transition disabled:opacity-50">
+                          className="flex-1 sm:flex-none bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold px-3 py-1.5 rounded transition disabled:opacity-50">
                           {closingRoomId === room.id ? '...' : 'Fermer'}
                         </button>
                       )}
                       <button onClick={() => handleDeleteRoom(room)} disabled={closingRoomId === room.id}
-                        className="bg-red-600 hover:bg-red-700 text-white text-xs font-bold px-3 py-1.5 rounded transition disabled:opacity-50">
+                        className="flex-1 sm:flex-none bg-red-600 hover:bg-red-700 text-white text-xs font-bold px-3 py-1.5 rounded transition disabled:opacity-50">
                         Supprimer
                       </button>
                     </div>
@@ -679,10 +679,10 @@ export default function AdminPanel() {
       )}
 
       {tab === 'stats' && (
-        <div className="space-y-6">
+        <div className="space-y-4 sm:space-y-6">
           {statsError && <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded p-3">⚠️ {statsError}</p>}
 
-          <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-5">
+          <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-4 sm:p-5">
             <h2 className="font-bold text-slate-900 mb-4">Répartition des niveaux d'anglais</h2>
             {!levelStats ? (
               <p className="text-sm text-slate-500">Chargement...</p>
@@ -702,13 +702,13 @@ export default function AdminPanel() {
             )}
           </div>
 
-          <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-5">
+          <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-4 sm:p-5">
             <h2 className="font-bold text-slate-900 mb-3">Taux d'engagement (7 derniers jours)</h2>
             {!engagement ? (
               <p className="text-sm text-slate-500">Chargement...</p>
             ) : (
-              <div className="flex items-center gap-6">
-                <div className="text-4xl font-black text-red-600">{engagement.engagement_rate}%</div>
+              <div className="flex flex-wrap items-center gap-4 sm:gap-6">
+                <div className="text-3xl sm:text-4xl font-black text-red-600">{engagement.engagement_rate}%</div>
                 <p className="text-sm text-slate-500">
                   {engagement.active_this_week} membre(s) actif(s) sur {engagement.total_members} inscrits
                   <br /><span className="text-xs text-slate-400">Basé sur les connexions enregistrées.</span>
@@ -717,15 +717,15 @@ export default function AdminPanel() {
             )}
           </div>
 
-          <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-5">
+          <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-4 sm:p-5">
             <h2 className="font-bold text-slate-900 mb-3">Progrès moyen pour monter d'un niveau</h2>
             {!avgProgress ? (
               <p className="text-sm text-slate-500">Chargement...</p>
             ) : avgProgress.average_days_per_level === null ? (
               <p className="text-sm text-slate-400 italic">{avgProgress.message}</p>
             ) : (
-              <div className="flex items-center gap-6">
-                <div className="text-4xl font-black text-red-600">{avgProgress.average_days_per_level}j</div>
+              <div className="flex flex-wrap items-center gap-4 sm:gap-6">
+                <div className="text-3xl sm:text-4xl font-black text-red-600">{avgProgress.average_days_per_level}j</div>
                 <p className="text-sm text-slate-500">
                   En moyenne, sur {avgProgress.sample_size} changement(s) de niveau enregistré(s).
                 </p>
@@ -733,7 +733,7 @@ export default function AdminPanel() {
             )}
           </div>
 
-          <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-5">
+          <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-4 sm:p-5">
             <h2 className="font-bold text-slate-900 mb-3">Activité par salon de discussion</h2>
             {!roomActivity ? (
               <p className="text-sm text-slate-500">Chargement...</p>
@@ -742,13 +742,13 @@ export default function AdminPanel() {
             ) : (
               <div className="space-y-2">
                 {roomActivity.map((r, idx) => (
-                  <div key={r.room_name} className="flex items-center justify-between p-2 border-b border-slate-50 last:border-0">
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs font-bold text-slate-400 w-5">#{idx + 1}</span>
-                      <span className="text-sm font-medium text-slate-800">{r.room_name}</span>
-                      {r.is_closed && <span className="text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded">Fermé</span>}
+                  <div key={r.room_name} className="flex items-center justify-between gap-2 p-2 border-b border-slate-50 last:border-0">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="text-xs font-bold text-slate-400 w-5 shrink-0">#{idx + 1}</span>
+                      <span className="text-sm font-medium text-slate-800 truncate">{r.room_name}</span>
+                      {r.is_closed && <span className="text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded shrink-0">Fermé</span>}
                     </div>
-                    <span className="text-sm font-bold text-red-600">{r.message_count} msg</span>
+                    <span className="text-sm font-bold text-red-600 shrink-0">{r.message_count} msg</span>
                   </div>
                 ))}
               </div>
