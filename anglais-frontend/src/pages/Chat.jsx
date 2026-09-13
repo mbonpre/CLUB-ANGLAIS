@@ -731,13 +731,13 @@ export default function ChatClubAnglais() {
                 <div ref={messagesEndRef} />
               </div>
 
-              <form onSubmit={handleSendMessage} className={`p-4 border-t flex items-center gap-2 ${darkMode ? 'border-slate-800 bg-[#1E40AF]' : 'border-[#DBEAFE] bg-white'}`}>
+              <form onSubmit={handleSendMessage} className={`p-2 sm:p-4 border-t flex items-center gap-1 sm:gap-2 ${darkMode ? 'border-slate-800 bg-[#1E40AF]' : 'border-[#DBEAFE] bg-white'}`}>
                 <input
                   type="text" value={inputText} onChange={(e) => setInputText(e.target.value)}
                   placeholder={`Écrire dans #${activeRoom.name}...`}
-                  className={`flex-1 px-4 py-2.5 border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-red-500 ${darkMode ? 'bg-[#1D4ED8] border-slate-700 text-white' : 'bg-[#EFF6FF] border-slate-200'}`}
+                  className={`flex-1 min-w-0 px-3 sm:px-4 py-2 sm:py-2.5 border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-red-500 ${darkMode ? 'bg-[#1D4ED8] border-slate-700 text-white' : 'bg-[#EFF6FF] border-slate-200'}`}
                 />
-                <button type="submit" disabled={!inputText.trim()} className="w-10 h-10 rounded-xl bg-red-600 hover:bg-red-700 text-white flex items-center justify-center shadow transition shrink-0 disabled:opacity-40">➔</button>
+                <button type="submit" disabled={!inputText.trim()} className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-red-600 hover:bg-red-700 text-white flex items-center justify-center shadow transition shrink-0 disabled:opacity-40">➔</button>
               </form>
             </>
           )
@@ -891,31 +891,44 @@ export default function ChatClubAnglais() {
               </div>
             )}
 
-            <form onSubmit={handleSendMessage} className={`p-4 border-t flex items-center gap-2 relative ${darkMode ? 'border-slate-800 bg-[#1E40AF]' : 'border-[#DBEAFE] bg-white'}`}>
+            <form onSubmit={handleSendMessage} className={`p-2 sm:p-4 border-t flex items-center gap-1 sm:gap-2 relative ${darkMode ? 'border-slate-800 bg-[#1E40AF]' : 'border-[#DBEAFE] bg-white'}`}>
               {showStickerPicker && (
-                <div ref={stickerPickerRef} className={`absolute bottom-20 left-4 p-3 rounded-2xl shadow-2xl border grid grid-cols-4 gap-2 z-50 w-64 ${darkMode ? 'bg-[#1D4ED8] border-slate-700' : 'bg-white border-slate-200'}`}>
+                <div ref={stickerPickerRef} className={`absolute bottom-20 left-2 sm:left-4 p-3 rounded-2xl shadow-2xl border grid grid-cols-4 gap-2 z-50 w-64 ${darkMode ? 'bg-[#1D4ED8] border-slate-700' : 'bg-white border-slate-200'}`}>
                   {stickerList.map((emoji, i) => (
                     <button key={i} type="button" onClick={() => handleSendSticker(emoji)} className="text-3xl p-2 rounded-xl hover:bg-red-500/15 transition">{emoji}</button>
                   ))}
                 </div>
               )}
               {showAttachMenu && (
-                <div ref={attachMenuRef} className={`absolute bottom-20 left-12 z-50 rounded-2xl shadow-xl border py-3 px-2 flex flex-col gap-2 ${darkMode ? 'bg-[#1D4ED8] border-slate-700' : 'bg-white border-slate-200'}`}>
+                <div ref={attachMenuRef} className={`absolute bottom-20 left-10 sm:left-12 z-50 rounded-2xl shadow-xl border py-3 px-2 flex flex-col gap-2 min-w-[180px] ${darkMode ? 'bg-[#1D4ED8] border-slate-700' : 'bg-white border-slate-200'}`}>
                   <button type="button" onClick={() => fileInputRef.current.click()} className="flex items-center gap-3 px-4 py-2 text-xs rounded-xl hover:bg-red-500/10 font-medium">📷 Photo/Vidéo</button>
                   <button type="button" onClick={() => docInputRef.current.click()} className="flex items-center gap-3 px-4 py-2 text-xs rounded-xl hover:bg-red-500/10 font-medium">📄 Document</button>
+
+                  {/* Langue + correction : regroupées ici sur mobile pour libérer la barre de saisie */}
+                  <div className="sm:hidden border-t border-slate-700/20 pt-2 mt-1 flex items-center justify-between px-2">
+                    <div className="flex items-center rounded-lg overflow-hidden border text-xs font-semibold">
+                      <button type="button" onClick={() => setDictLang('fr')} className={`px-2 py-1 ${dictLang === 'fr' ? 'bg-red-600 text-white' : 'text-slate-500'}`}>🇫🇷</button>
+                      <button type="button" onClick={() => setDictLang('en')} className={`px-2 py-1 ${dictLang === 'en' ? 'bg-red-600 text-white' : 'text-slate-500'}`}>🇬🇧</button>
+                    </div>
+                    <button type="button" onClick={() => { correctText(); setShowAttachMenu(false); }} disabled={isCorrecting} className="text-lg px-2 disabled:opacity-50">
+                      {isCorrecting ? '⏳' : '✨'}
+                    </button>
+                  </div>
                 </div>
               )}
 
-              <div className="flex items-center gap-1">
-                <button type="button" onClick={() => setShowStickerPicker(!showStickerPicker)} className="p-2 rounded-xl text-lg hover:bg-slate-100/10 transition">😊</button>
-                <button type="button" onClick={() => setShowAttachMenu(!showAttachMenu)} disabled={uploadingFile} className="p-2 rounded-xl text-lg hover:bg-slate-100/10 transition disabled:opacity-50">
+              <div className="flex items-center gap-0.5 sm:gap-1 shrink-0">
+                <button type="button" onClick={() => setShowStickerPicker(!showStickerPicker)} className="p-1.5 sm:p-2 rounded-xl text-base sm:text-lg hover:bg-slate-100/10 transition">😊</button>
+                <button type="button" onClick={() => setShowAttachMenu(!showAttachMenu)} disabled={uploadingFile} className="p-1.5 sm:p-2 rounded-xl text-base sm:text-lg hover:bg-slate-100/10 transition disabled:opacity-50">
                   {uploadingFile ? '⏳' : '📎'}
                 </button>
-                <div className={`flex items-center rounded-lg overflow-hidden border text-xs font-semibold ${darkMode ? 'border-slate-700' : 'border-slate-200'}`}>
+
+                {/* Langue + correction : visibles en ligne seulement à partir de sm (tablette/desktop) */}
+                <div className={`hidden sm:flex items-center rounded-lg overflow-hidden border text-xs font-semibold ${darkMode ? 'border-slate-700' : 'border-slate-200'}`}>
                   <button type="button" onClick={() => setDictLang('fr')} className={`px-2 py-1 ${dictLang === 'fr' ? 'bg-red-600 text-white' : 'text-slate-500'}`}>🇫🇷</button>
                   <button type="button" onClick={() => setDictLang('en')} className={`px-2 py-1 ${dictLang === 'en' ? 'bg-red-600 text-white' : 'text-slate-500'}`}>🇬🇧</button>
                 </div>
-                <button type="button" onClick={correctText} disabled={isCorrecting} className="p-2 rounded-xl text-lg hover:bg-slate-100/10 transition disabled:opacity-50">
+                <button type="button" onClick={correctText} disabled={isCorrecting} className="hidden sm:inline-flex p-2 rounded-xl text-lg hover:bg-slate-100/10 transition disabled:opacity-50">
                   {isCorrecting ? '⏳' : '✨'}
                 </button>
               </div>
@@ -923,10 +936,10 @@ export default function ChatClubAnglais() {
               <input
                 type="text" value={inputText} onChange={(e) => setInputText(e.target.value)}
                 placeholder="Écrivez votre message..."
-                className={`flex-1 px-4 py-2.5 border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-red-500 ${darkMode ? 'bg-[#1D4ED8] border-slate-700 text-white' : 'bg-[#EFF6FF] border-slate-200'}`}
+                className={`flex-1 min-w-0 px-3 sm:px-4 py-2 sm:py-2.5 border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-red-500 ${darkMode ? 'bg-[#1D4ED8] border-slate-700 text-white' : 'bg-[#EFF6FF] border-slate-200'}`}
               />
 
-              <button type="submit" disabled={!inputText.trim()} className="w-10 h-10 rounded-xl bg-red-600 hover:bg-red-700 text-white flex items-center justify-center shadow transition shrink-0 disabled:opacity-40">
+              <button type="submit" disabled={!inputText.trim()} className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-red-600 hover:bg-red-700 text-white flex items-center justify-center shadow transition shrink-0 disabled:opacity-40">
                 ➔
               </button>
             </form>
