@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { API_BASE_URL } from '../config';
+import { API_BASE_URL, WS_BASE_URL } from '../config';
 const EN_WORDS = [
   'hello', 'hi', 'how', 'are', 'you', 'today', 'thank', 'thanks', 'please', 'yes', 'no',
   'good', 'morning', 'afternoon', 'evening', 'great', 'nice', 'meeting', 'practice',
