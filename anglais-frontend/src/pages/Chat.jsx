@@ -505,9 +505,9 @@ export default function ChatClubAnglais() {
   });
 
   return (
-    <div translate="no" className={`max-w-6xl mx-auto rounded-2xl shadow-xl border overflow-hidden flex h-[685px] relative transition-colors duration-200 ${darkMode ? 'bg-[#1E3A8A] text-[#EDEFF3] border-slate-800' : 'bg-white text-[#15181D] border-slate-100'}`}>
+    <div translate="no" className={`max-w-6xl mx-auto sm:rounded-2xl shadow-xl border overflow-hidden flex h-[85vh] sm:h-[685px] relative transition-colors duration-200 ${darkMode ? 'bg-[#1E3A8A] text-[#EDEFF3] border-slate-800' : 'bg-white text-[#15181D] border-slate-100'}`}>
 
-      <div className={`w-1/3 border-r flex flex-col ${darkMode ? 'border-[#3B5FCC] bg-[#1E40AF]' : 'border-[#DBEAFE] bg-[#EFF6FF]'}`}>
+      <div className={`${(activeContact || activeRoom) ? 'hidden' : 'flex'} sm:flex w-full sm:w-1/3 border-r flex-col ${darkMode ? 'border-[#3B5FCC] bg-[#1E40AF]' : 'border-[#DBEAFE] bg-[#EFF6FF]'}`}>
         <div className="px-4 py-3 flex justify-between items-center bg-[#1E3A8A] border-b-2 border-red-600">
           <div>
             <h2 className="font-bold text-lg text-white">Messagerie</h2>
@@ -642,7 +642,7 @@ export default function ChatClubAnglais() {
           </div>
         </div>
       )}
-      <div className={`w-2/3 flex flex-col ${darkMode ? 'bg-[#1E3A8A]' : 'bg-white'}`}>
+      <div className={`${(activeContact || activeRoom) ? 'flex' : 'hidden'} sm:flex w-full sm:w-2/3 flex-col ${darkMode ? 'bg-[#1E3A8A]' : 'bg-white'}`}>
         {chatMode === 'rooms' ? (
           !activeRoom ? (
             <div className="flex-1 flex items-center justify-center text-slate-400 text-sm">
@@ -661,8 +661,9 @@ export default function ChatClubAnglais() {
             </div>
           ) : (
             <>
-              <div className={`px-6 py-4 border-b-2 flex items-center gap-3 justify-between ${darkMode ? 'bg-[#1E40AF]' : 'bg-white'}`} style={{ borderColor: activeRoom.color || '#DC2626' }}>
+              <div className={`px-4 sm:px-6 py-4 border-b-2 flex items-center gap-3 justify-between ${darkMode ? 'bg-[#1E40AF]' : 'bg-white'}`} style={{ borderColor: activeRoom.color || '#DC2626' }}>
                 <div className="flex items-center gap-3">
+                  <button type="button" onClick={() => setActiveRoom(null)} className="sm:hidden text-xl -ml-1 mr-1">←</button>
                   <div className="w-10 h-10 rounded-full text-white flex items-center justify-center font-bold shadow-sm" style={{ background: activeRoom.color || '#DC2626' }}>#</div>
                   <div>
                     <h3 className="font-bold text-sm">{activeRoom.name}</h3>
@@ -746,7 +747,8 @@ export default function ChatClubAnglais() {
           </div>
         ) : (
           <>
-            <div className={`px-6 py-4 border-b-2 border-red-600 flex items-center gap-3 ${darkMode ? 'bg-[#1E40AF]' : 'bg-white'}`}>
+            <div className={`px-4 sm:px-6 py-4 border-b-2 border-red-600 flex items-center gap-3 ${darkMode ? 'bg-[#1E40AF]' : 'bg-white'}`}>
+              <button type="button" onClick={() => setActiveContact(null)} className="sm:hidden text-xl -ml-1 mr-1">←</button>
               <div className="w-10 h-10 rounded-full bg-gradient-to-br from-red-500 to-rose-700 text-white flex items-center justify-center font-bold shadow-sm">
                 {getInitials(activeContact.full_name)}
               </div>
