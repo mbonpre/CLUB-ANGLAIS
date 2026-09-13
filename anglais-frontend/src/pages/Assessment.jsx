@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { API_BASE_URL } from '../config';
 
 export default function Assessment() {
   const [questions, setQuestions] = useState([]);
@@ -11,7 +12,7 @@ export default function Assessment() {
   const authHeaders = () => ({ 'Content-Type': 'application/json', 'Authorization': `Bearer ${localStorage.getItem('token')}` });
 
   useEffect(() => {
-    fetch('http://localhost:8000/assessment/questions', { headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` } })
+    fetch(   `${API_BASE_URL}/assessment/questions`, { headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` } })
       .then(r => r.json())
       .then(d => setQuestions(Array.isArray(d) ? d : []))
       .catch(() => setError('Impossible de charger le test.'))
@@ -26,7 +27,7 @@ export default function Assessment() {
     }
     setError(''); setSubmitting(true);
     try {
-      const res = await fetch('http://localhost:8000/assessment/submit', {
+      const res = await fetch(   `${API_BASE_URL}/assessment/submit`, {
         method: 'POST', headers: authHeaders(), body: JSON.stringify({ answers })
       });
       const data = await res.json();

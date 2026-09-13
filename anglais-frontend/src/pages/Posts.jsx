@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { API_BASE_URL } from '../config';
 
 const detectLanguage = (t) => /[àâäéèêëîïôöùûüç]|(?:\b(le|la|les|des|une|un|est|vous|je|nous|avec|bonjour|merci)\b)/i.test(t) ? 'fr' : 'en';
 const getInitials = (n) => { if (!n) return '?'; const p = n.trim().split(/\s+/); return p.length >= 2 ? (p[0][0]+p[1][0]).toUpperCase() : p[0].slice(0,2).toUpperCase(); };
@@ -67,7 +68,7 @@ export default function Posts({ activeTab, isAuthenticated, onRequestLogin }) {
   const fetchPosts = async () => {
     setPostsError('');
     try {
-      const r = await fetch(`http://localhost:8000/posts/?post_type=${activeTab}`);
+      const r = await fetch(`${API_BASE_URL}/posts/?post_type=${activeTab}`);
       if (!r.ok) throw new Error(`Erreur serveur (${r.status})`);
       const d = await r.json();
       if (Array.isArray(d)) setPosts(d);
@@ -78,7 +79,7 @@ export default function Posts({ activeTab, isAuthenticated, onRequestLogin }) {
   const fetchMyLikes = async () => {
     if (!isAuthenticated) { setMyLikedIds(new Set()); return; }
     try {
-      const r = await fetch('http://localhost:8000/posts/my-likes', { headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` } });
+      const r = await fetch(   `${API_BASE_URL}/posts/my-likes`, { headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` } });
       if (r.ok) setMyLikedIds(new Set(await r.json()));
     } catch (e) {}
   };
@@ -86,7 +87,7 @@ export default function Posts({ activeTab, isAuthenticated, onRequestLogin }) {
   const fetchCurrentUser = async () => {
     if (!isAuthenticated) { setCurrentUser(null); return; }
     try {
-      const r = await fetch('http://localhost:8000/auth/me', { headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` } });
+      const r = await fetch(   `${API_BASE_URL}/auth/me`, { headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` } });
       if (r.ok) setCurrentUser(await r.json());
     } catch (e) {}
   };
@@ -101,11 +102,11 @@ export default function Posts({ activeTab, isAuthenticated, onRequestLogin }) {
       let mediaUrl = "";
       if (mediaFile) {
         const fd = new FormData(); fd.append("file", mediaFile);
-        const up = await fetch("http://localhost:8000/upload/", { method: "POST", body: fd });
+        const up = await fetch(API_BASE_URL + "/upload/", { method: "POST", body: fd });
         if (!up.ok) throw new Error("Erreur upload.");
         mediaUrl = (await up.json()).url;
       }
-      const r = await fetch('http://localhost:8000/posts/', {
+      const r = await fetch(   `${API_BASE_URL}/posts/`, {
         method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
         body: JSON.stringify({ title, content, post_type: postType, image_url: mediaUrl })
       });
@@ -131,7 +132,7 @@ export default function Posts({ activeTab, isAuthenticated, onRequestLogin }) {
     if (!editTitle.trim() || !editContent.trim()) return;
     setSavingEdit(true);
     try {
-      const r = await fetch(`http://localhost:8000/posts/${post.id}`, {
+      const r = await fetch(`${API_BASE_URL}/posts/${post.id}`, {
         method: 'PUT', headers: authHeaders(),
         body: JSON.stringify({ title: editTitle.trim(), content: editContent.trim(), image_url: post.image_url || null }),
       });
@@ -146,7 +147,7 @@ export default function Posts({ activeTab, isAuthenticated, onRequestLogin }) {
     if (!window.confirm("Supprimer définitivement cette publication ?")) return;
     setDeletingPostId(post.id);
     try {
-      const r = await fetch(`http://localhost:8000/posts/${post.id}`, { method: 'DELETE', headers: authHeaders() });
+      const r = await fetch(`${API_BASE_URL}/posts/${post.id}`, { method: 'DELETE', headers: authHeaders() });
       const d = await r.json();
       if (!r.ok) throw new Error(d.detail || "Erreur lors de la suppression.");
       setPosts(p => p.filter(x => x.id !== post.id));
@@ -160,7 +161,7 @@ export default function Posts({ activeTab, isAuthenticated, onRequestLogin }) {
     setTranslatingPostId(postId);
     try {
       const target = detectLanguage(text) === 'fr' ? 'en' : 'fr';
-      const r = await fetch(`http://localhost:8000/translate/?text=${encodeURIComponent(text.slice(0,490))}&target=${target}`);
+      const r = await fetch(`${API_BASE_URL}/translate/?text=${encodeURIComponent(text.slice(0,490))}&target=${target}`);
       if (!r.ok) { const e = await r.json().catch(()=>({})); throw new Error(e.detail || `Erreur ${r.status}`); }
       const d = await r.json();
       if (!d.translatedText) throw new Error('Réponse vide');
@@ -174,7 +175,7 @@ export default function Posts({ activeTab, isAuthenticated, onRequestLogin }) {
     if (!isAuthenticated) { onRequestLogin?.(); return; }
     setLikingId(postId);
     try {
-      const r = await fetch(`http://localhost:8000/posts/${postId}/like`, { method: 'POST', headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` } });
+      const r = await fetch(`${API_BASE_URL}/posts/${postId}/like`, { method: 'POST', headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` } });
       const d = await r.json();
       setPosts(p => p.map(x => x.id === postId ? { ...x, likes_count: d.likes_count } : x));
       setMyLikedIds(prev => { const n = new Set(prev); d.liked ? n.add(postId) : n.delete(postId); return n; });
@@ -188,7 +189,7 @@ export default function Posts({ activeTab, isAuthenticated, onRequestLogin }) {
     if (!text?.trim()) return;
     setSubmittingCommentId(postId);
     try {
-      const r = await fetch(`http://localhost:8000/posts/${postId}/comments`, { method: 'POST', headers: authHeaders(), body: JSON.stringify({ text: text.trim() }) });
+      const r = await fetch(`${API_BASE_URL}/posts/${postId}/comments`, { method: 'POST', headers: authHeaders(), body: JSON.stringify({ text: text.trim() }) });
       const d = await r.json();
       if (!r.ok) throw new Error(d.detail || "Erreur.");
       setPosts(p => p.map(x => x.id === postId ? { ...x, comments: [...x.comments, d] } : x));
@@ -198,7 +199,7 @@ export default function Posts({ activeTab, isAuthenticated, onRequestLogin }) {
   };
 
   const likeComment = (commentId) => {
-    fetch(`http://localhost:8000/posts/comments/${commentId}/like`, { method: 'POST', headers: authHeaders() }).catch(()=>{});
+    fetch(`${API_BASE_URL}/posts/comments/${commentId}/like`, { method: 'POST', headers: authHeaders() }).catch(()=>{});
   };
 
   return (

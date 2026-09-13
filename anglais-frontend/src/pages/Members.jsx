@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { API_BASE_URL } from '../config';
 
 export default function Members() {
   const [search, setSearch] = useState('');
@@ -9,14 +10,14 @@ export default function Members() {
   const [editingId, setEditingId] = useState(null);
 
   useEffect(() => {
-    fetch('http://localhost:8000/users/')
+    fetch(   `${API_BASE_URL}/users/`)
       .then(r => r.json())
       .then(d => { if (Array.isArray(d)) setMembers(d); setLoading(false); })
       .catch(() => setLoading(false));
 
     const token = localStorage.getItem('token');
     if (token) {
-      fetch('http://localhost:8000/auth/me', { headers: { 'Authorization': `Bearer ${token}` } })
+      fetch(   `${API_BASE_URL}/auth/me`, { headers: { 'Authorization': `Bearer ${token}` } })
         .then(r => r.ok ? r.json() : null)
         .then(u => setIsStaff(u && ['ADMIN', 'COMMUNITY_MANAGER'].includes(u.role)))
         .catch(() => setIsStaff(false));
@@ -27,7 +28,7 @@ export default function Members() {
     if (!window.confirm(`Confirmer le changement de niveau de ${memberName} vers ${newLevel} ?`)) return;
     setEditingId(userId);
     try {
-      const res = await fetch(`http://localhost:8000/admin/users/${userId}/level`, {
+      const res = await fetch(`${API_BASE_URL}/admin/users/${userId}/level`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${localStorage.getItem('token')}` },
         body: JSON.stringify({ english_level: newLevel })

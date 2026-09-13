@@ -6,6 +6,7 @@ import Posts from './Posts.jsx';
 import Login from './Login.jsx';
 import AdminPanel from './AdminPanel.jsx';
 import Assessment from './Assessment.jsx';
+import { API_BASE_URL } from '../config';
 
 const SECTIONS = { debate: 'Débat', interpretation: 'Interprétation', news: 'Actualités', drama: 'Théâtre' };
 
@@ -45,7 +46,7 @@ export default function Dashboard({ isAuthenticated, onLoginSuccess, onLogout })
 
   const fetchCurrentUser = () => {
     if (!isAuthenticated) { setCurrentUser(null); return; }
-    fetch('http://localhost:8000/auth/me', {
+    fetch(   `${API_BASE_URL}/auth/me`, {
       headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` },
     })
       .then((res) => {
@@ -83,12 +84,12 @@ export default function Dashboard({ isAuthenticated, onLoginSuccess, onLogout })
   const [postCount, setPostCount] = useState(null);
 
   useEffect(() => {
-    fetch('http://localhost:8000/users/')
+    fetch(   `${API_BASE_URL}/users/`)
       .then((res) => res.json())
       .then((data) => { if (Array.isArray(data)) setMemberCount(data.length); })
       .catch(() => setMemberCount(null));
 
-    fetch('http://localhost:8000/posts/')
+    fetch(   `${API_BASE_URL}/posts/`)
       .then((res) => res.json())
       .then((data) => { if (Array.isArray(data)) setPostCount(data.length); })
       .catch(() => setPostCount(null));

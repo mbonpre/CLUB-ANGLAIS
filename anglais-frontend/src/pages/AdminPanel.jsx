@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { API_BASE_URL } from '../config';
 
 const authHeaders = () => ({
   'Content-Type': 'application/json',
@@ -68,7 +69,7 @@ export default function AdminPanel() {
 
   const fetchQuestions = async () => {
     try {
-      const res = await fetch('http://localhost:8000/assessment/admin/questions', { headers: authHeaders() });
+      const res = await fetch(   `${API_BASE_URL}/assessment/admin/questions`, { headers: authHeaders() });
       setQuestions(res.ok ? await res.json() : []);
     } catch (err) { console.error(err); }
   };
@@ -89,7 +90,7 @@ export default function AdminPanel() {
     setSavingQuestion(true);
     try {
       const payload = { text: qText.trim(), options: qOptions.map(o => o.trim()), correct_index: qCorrect, level: qLevel, is_active: true, section: qSection };
-      const url = editingQuestion ? `http://localhost:8000/assessment/admin/questions/${editingQuestion.id}` : 'http://localhost:8000/assessment/admin/questions';
+      const url = editingQuestion ? `${API_BASE_URL}/assessment/admin/questions/${editingQuestion.id}` :    `${API_BASE_URL}/assessment/admin/questions`;
       const res = await fetch(url, { method: editingQuestion ? 'PUT' : 'POST', headers: authHeaders(), body: JSON.stringify(payload) });
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail || 'Erreur.');
@@ -100,13 +101,13 @@ export default function AdminPanel() {
 
   const handleDeleteQuestion = async (id) => {
     if (!window.confirm('Supprimer cette question ?')) return;
-    await fetch(`http://localhost:8000/assessment/admin/questions/${id}`, { method: 'DELETE', headers: authHeaders() });
+    await fetch(`${API_BASE_URL}/assessment/admin/questions/${id}`, { method: 'DELETE', headers: authHeaders() });
     fetchQuestions();
   };
 
   const fetchPendingAssessments = async () => {
     try {
-      const res = await fetch('http://localhost:8000/assessment/pending', { headers: authHeaders() });
+      const res = await fetch(   `${API_BASE_URL}/assessment/pending`, { headers: authHeaders() });
       setPendingAssessments(res.ok ? await res.json() : []);
     } catch (err) { console.error(err); }
   };
@@ -114,7 +115,7 @@ export default function AdminPanel() {
   const handleValidateAssessment = async (id, level) => {
     setValidatingId(id);
     try {
-      const res = await fetch(`http://localhost:8000/assessment/${id}/validate`, {
+      const res = await fetch(`${API_BASE_URL}/assessment/${id}/validate`, {
         method: 'POST', headers: authHeaders(), body: JSON.stringify({ final_level: level }),
       });
       const data = await res.json();
@@ -127,7 +128,7 @@ export default function AdminPanel() {
   const fetchRequests = async () => {
     setLoadingRequests(true);
     try {
-      const res = await fetch('http://localhost:8000/account-requests/', { headers: authHeaders() });
+      const res = await fetch(   `${API_BASE_URL}/account-requests/`, { headers: authHeaders() });
       const data = await res.json();
       setRequests(Array.isArray(data) ? data.filter(r => r.status === 'pending') : []);
     } catch (err) {
@@ -140,7 +141,7 @@ export default function AdminPanel() {
   const fetchMembers = async () => {
     setLoadingMembers(true);
     try {
-      const res = await fetch('http://localhost:8000/users/');
+      const res = await fetch(   `${API_BASE_URL}/users/`);
       const data = await res.json();
       setMembers(Array.isArray(data) ? data : []);
     } catch (err) {
@@ -152,7 +153,7 @@ export default function AdminPanel() {
 
   const fetchManageRooms = async () => {
     try {
-      const res = await fetch('http://localhost:8000/rooms/', { headers: authHeaders() });
+      const res = await fetch(   `${API_BASE_URL}/rooms/`, { headers: authHeaders() });
       const data = await res.json();
       setManageRooms(Array.isArray(data) ? data : []);
     } catch (err) {
@@ -167,7 +168,7 @@ export default function AdminPanel() {
 
     setBanningId(member.id);
     try {
-      const res = await fetch(`http://localhost:8000/admin/users/${member.id}/toggle-active`, {
+      const res = await fetch(`${API_BASE_URL}/admin/users/${member.id}/toggle-active`, {
         method: 'PATCH', headers: authHeaders(),
       });
       const data = await res.json();
@@ -184,7 +185,7 @@ export default function AdminPanel() {
     if (!window.confirm(`SUPPRIMER DÉFINITIVEMENT le compte de ${member.full_name} ? Cette action est irréversible et effacera son accès au site.`)) return;
     setDeletingId(member.id);
     try {
-      const res = await fetch(`http://localhost:8000/admin/users/${member.id}`, { method: 'DELETE', headers: authHeaders() });
+      const res = await fetch(`${API_BASE_URL}/admin/users/${member.id}`, { method: 'DELETE', headers: authHeaders() });
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail);
       setMembers(prev => prev.filter(m => m.id !== member.id));
@@ -199,7 +200,7 @@ export default function AdminPanel() {
     if (!window.confirm(`Fermer le salon "${room.name}" ? Plus personne ne pourra y écrire (l'historique reste visible).`)) return;
     setClosingRoomId(room.id);
     try {
-      const res = await fetch(`http://localhost:8000/rooms/${room.id}/close`, {
+      const res = await fetch(`${API_BASE_URL}/rooms/${room.id}/close`, {
         method: 'PATCH', headers: authHeaders(),
       });
       const data = await res.json();
@@ -216,7 +217,7 @@ export default function AdminPanel() {
     if (!window.confirm(`SUPPRIMER DÉFINITIVEMENT "${room.name}" ? Efface tous ses messages, action irréversible.`)) return;
     setClosingRoomId(room.id);
     try {
-      const res = await fetch(`http://localhost:8000/rooms/${room.id}`, { method: 'DELETE', headers: authHeaders() });
+      const res = await fetch(`${API_BASE_URL}/rooms/${room.id}`, { method: 'DELETE', headers: authHeaders() });
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail);
       setManageRooms(prev => prev.filter(r => r.id !== room.id));
@@ -231,10 +232,10 @@ export default function AdminPanel() {
     setStatsError('');
     try {
       const [levelRes, engagementRes, progressRes, roomsRes] = await Promise.all([
-        fetch('http://localhost:8000/stats/level-distribution', { headers: authHeaders() }),
-        fetch('http://localhost:8000/stats/engagement', { headers: authHeaders() }),
-        fetch('http://localhost:8000/stats/average-progress', { headers: authHeaders() }),
-        fetch('http://localhost:8000/stats/room-activity', { headers: authHeaders() }),
+        fetch(   `${API_BASE_URL}/stats/level-distribution`, { headers: authHeaders() }),
+        fetch(   `${API_BASE_URL}/stats/engagement`, { headers: authHeaders() }),
+        fetch(   `${API_BASE_URL}/stats/average-progress`, { headers: authHeaders() }),
+        fetch(   `${API_BASE_URL}/stats/room-activity`, { headers: authHeaders() }),
       ]);
       if (!levelRes.ok || !engagementRes.ok || !progressRes.ok || !roomsRes.ok) throw new Error('Erreur lors du chargement des statistiques.');
       setLevelStats(await levelRes.json());
@@ -252,7 +253,7 @@ export default function AdminPanel() {
     fetchManageRooms();
     fetchPendingAssessments();
     fetchQuestions();
-    fetch('http://localhost:8000/auth/me', { headers: authHeaders() }).then(r => r.json()).then(setCurrentUser).catch(() => {});
+    fetch(   `${API_BASE_URL}/auth/me`, { headers: authHeaders() }).then(r => r.json()).then(setCurrentUser).catch(() => {});
   }, []);
 
   const handlePromoteAdmin = async (member) => {
@@ -261,7 +262,7 @@ export default function AdminPanel() {
     if (!window.confirm(`Promouvoir ${member.full_name} en Admin de la section "${sectionLabel}" ? Il aura les pouvoirs d'Admin uniquement sur cette section.`)) return;
     setPromotingId(member.id);
     try {
-      const res = await fetch(`http://localhost:8000/auth/users/${member.id}/promote?new_role=ADMIN&section=${section}`, { method: 'PUT', headers: authHeaders() });
+      const res = await fetch(`${API_BASE_URL}/auth/users/${member.id}/promote?new_role=ADMIN&section=${section}`, { method: 'PUT', headers: authHeaders() });
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail);
       setMembers(prev => prev.map(m => m.id === member.id ? { ...m, role: 'ADMIN', section } : m));
@@ -283,7 +284,7 @@ export default function AdminPanel() {
   const handleApprove = async (id) => {
     setRequestActionId(id);
     try {
-      const res = await fetch(`http://localhost:8000/account-requests/${id}/approve`, { method: 'POST', headers: authHeaders() });
+      const res = await fetch(`${API_BASE_URL}/account-requests/${id}/approve`, { method: 'POST', headers: authHeaders() });
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail);
       fetchRequests();
@@ -298,7 +299,7 @@ export default function AdminPanel() {
   const handleReject = async (id) => {
     setRequestActionId(id);
     try {
-      const res = await fetch(`http://localhost:8000/account-requests/${id}/reject`, { method: 'POST', headers: authHeaders() });
+      const res = await fetch(`${API_BASE_URL}/account-requests/${id}/reject`, { method: 'POST', headers: authHeaders() });
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail);
       fetchRequests();
@@ -313,7 +314,7 @@ export default function AdminPanel() {
     if (!window.confirm(`Confirmer le changement de niveau de ${memberName} vers ${newLevel} ?`)) return;
     setEditingLevelId(userId);
     try {
-      const res = await fetch(`http://localhost:8000/admin/users/${userId}/level`, {
+      const res = await fetch(`${API_BASE_URL}/admin/users/${userId}/level`, {
         method: 'PATCH', headers: authHeaders(), body: JSON.stringify({ english_level: newLevel }),
       });
       const data = await res.json();
@@ -329,7 +330,7 @@ export default function AdminPanel() {
   const handleSectionChange = async (userId, newSection, memberName) => {
     if (!window.confirm(`Confirmer le changement de section de ${memberName} vers "${SECTIONS.find(s => s.value === newSection)?.label}" ?`)) return;
     try {
-      const res = await fetch(`http://localhost:8000/admin/users/${userId}/section`, {
+      const res = await fetch(`${API_BASE_URL}/admin/users/${userId}/section`, {
         method: 'PATCH', headers: authHeaders(), body: JSON.stringify({ section: newSection }),
       });
       const data = await res.json();
@@ -345,7 +346,7 @@ export default function AdminPanel() {
     setAnnounceFeedback('');
     setAnnounceSubmitting(true);
     try {
-      const res = await fetch('http://localhost:8000/posts/', {
+      const res = await fetch(   `${API_BASE_URL}/posts/`, {
         method: 'POST', headers: authHeaders(),
         body: JSON.stringify({ title: announceTitle, content: announceContent, post_type: 'official' }),
       });
@@ -365,7 +366,7 @@ export default function AdminPanel() {
     e.preventDefault();
     setSaFeedback(''); setSaSubmitting(true);
     try {
-      const res = await fetch('http://localhost:8000/auth/create-super-admin', {
+      const res = await fetch(   `${API_BASE_URL}/auth/create-super-admin`, {
         method: 'POST', headers: authHeaders(),
         body: JSON.stringify({ full_name: saFullName, email: saEmail, password: saPassword }),
       });

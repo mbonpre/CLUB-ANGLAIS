@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-
+import { API_BASE_URL } from '../config';
 const EN_WORDS = [
   'hello', 'hi', 'how', 'are', 'you', 'today', 'thank', 'thanks', 'please', 'yes', 'no',
   'good', 'morning', 'afternoon', 'evening', 'great', 'nice', 'meeting', 'practice',
@@ -103,12 +103,12 @@ export default function ChatClubAnglais() {
   const authHeaders = () => ({ 'Authorization': `Bearer ${localStorage.getItem('token')}` });
 
   useEffect(() => {
-    fetch('http://localhost:8000/auth/me', { headers: authHeaders() })
+    fetch(   `${API_BASE_URL}/auth/me`, { headers: authHeaders() })
       .then(res => res.ok ? res.json() : null)
       .then(setCurrentUser)
       .catch(() => setCurrentUser(null));
 
-    fetch('http://localhost:8000/users/')
+    fetch(   `${API_BASE_URL}/users/`)
       .then(res => res.json())
       .then(data => setMembers(Array.isArray(data) ? data : []))
       .catch(() => setMembers([]));
@@ -120,14 +120,14 @@ export default function ChatClubAnglais() {
   const isStaff = currentUser && ['ADMIN', 'COMMUNITY_MANAGER'].includes(currentUser.role);
 
   const fetchRooms = () => {
-    fetch('http://localhost:8000/rooms/', { headers: authHeaders() })
+    fetch(   `${API_BASE_URL}/rooms/`, { headers: authHeaders() })
       .then(res => res.ok ? res.json() : [])
       .then(data => setRooms(Array.isArray(data) ? data : []))
       .catch(() => setRooms([]));
   };
 
   const refreshConversationPreviews = () => {
-    fetch('http://localhost:8000/messages/conversations', { headers: authHeaders() })
+    fetch(   `${API_BASE_URL}/messages/conversations`, { headers: authHeaders() })
       .then(res => res.ok ? res.json() : [])
       .then(data => {
         const map = {};
@@ -141,7 +141,7 @@ export default function ChatClubAnglais() {
     const token = localStorage.getItem('token');
     if (!token) return;
 
-    const ws = new WebSocket(`ws://localhost:8000/messages/ws?token=${token}`);
+    const ws = new WebSocket(`${WS_BASE_URL}/messages/ws?token=${token}`);
     wsRef.current = ws;
 
     ws.onopen = () => setWsConnected(true);
@@ -225,7 +225,7 @@ export default function ChatClubAnglais() {
     setActiveContact(member);
     setLoadingHistory(true);
     try {
-      const res = await fetch(`http://localhost:8000/messages/${member.id}`, { headers: authHeaders() });
+      const res = await fetch(`${API_BASE_URL}/messages/${member.id}`, { headers: authHeaders() });
       const data = await res.json();
       setMessagesByContact(prev => ({ ...prev, [member.id]: Array.isArray(data) ? data : [] }));
       refreshConversationPreviews();
@@ -258,7 +258,7 @@ export default function ChatClubAnglais() {
     if (!activeContact) return;
 
     if (editingMessageId) {
-      fetch(`http://localhost:8000/messages/${editingMessageId}`, {
+      fetch(`${API_BASE_URL}/messages/${editingMessageId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json', ...authHeaders() },
         body: JSON.stringify({ content: inputText.trim() }),
@@ -278,18 +278,18 @@ export default function ChatClubAnglais() {
 
   const fetchPending = async (roomId) => {
     try {
-      const res = await fetch(`http://localhost:8000/rooms/${roomId}/pending`, { headers: authHeaders() });
+      const res = await fetch(`${API_BASE_URL}/rooms/${roomId}/pending`, { headers: authHeaders() });
       setPendingRequests(res.ok ? await res.json() : []);
     } catch (err) { console.error(err); }
   };
 
   const handleApprove = async (roomId, membershipId) => {
-    await fetch(`http://localhost:8000/rooms/${roomId}/approve/${membershipId}`, { method: 'POST', headers: authHeaders() });
+    await fetch(`${API_BASE_URL}/rooms/${roomId}/approve/${membershipId}`, { method: 'POST', headers: authHeaders() });
     fetchPending(roomId); fetchRooms();
   };
 
   const handleApproveAll = async (roomId) => {
-    await fetch(`http://localhost:8000/rooms/${roomId}/approve-all`, { method: 'POST', headers: authHeaders() });
+    await fetch(`${API_BASE_URL}/rooms/${roomId}/approve-all`, { method: 'POST', headers: authHeaders() });
     fetchPending(roomId); fetchRooms();
   };
 
@@ -300,7 +300,7 @@ export default function ChatClubAnglais() {
     if (!room.is_member) return;
     setLoadingRoomHistory(true);
     try {
-      const res = await fetch(`http://localhost:8000/rooms/${room.id}/messages`, { headers: authHeaders() });
+      const res = await fetch(`${API_BASE_URL}/rooms/${room.id}/messages`, { headers: authHeaders() });
       const data = await res.json();
       setRoomMessagesByRoom(prev => ({ ...prev, [room.id]: Array.isArray(data) ? data : [] }));
     } catch (err) {
@@ -313,7 +313,7 @@ export default function ChatClubAnglais() {
   const handleJoinRoom = async (room) => {
     setJoiningRoomId(room.id);
     try {
-      const res = await fetch(`http://localhost:8000/rooms/${room.id}/join`, { method: 'POST', headers: authHeaders() });
+      const res = await fetch(`${API_BASE_URL}/rooms/${room.id}/join`, { method: 'POST', headers: authHeaders() });
       const data = await res.json();
       fetchRooms();
       if (data.status === 'pending') setActiveRoom({ ...room, is_pending: true });
@@ -328,7 +328,7 @@ export default function ChatClubAnglais() {
   const handleLeaveRoom = async (room) => {
     if (!window.confirm(`Quitter ${room.name} ?`)) return;
     try {
-      await fetch(`http://localhost:8000/rooms/${room.id}/leave`, { method: 'POST', headers: authHeaders() });
+      await fetch(`${API_BASE_URL}/rooms/${room.id}/leave`, { method: 'POST', headers: authHeaders() });
       setActiveRoom(null);
       fetchRooms();
     } catch (err) { console.error(err); }
@@ -336,7 +336,7 @@ export default function ChatClubAnglais() {
 
   const handleReact = async (msg, emoji) => {
     try {
-      await fetch(`http://localhost:8000/messages/${msg.id}/react`, {
+      await fetch(`${API_BASE_URL}/messages/${msg.id}/react`, {
         method: 'POST', headers: { 'Content-Type': 'application/json', ...authHeaders() },
         body: JSON.stringify({ emoji }),
       });
@@ -348,7 +348,7 @@ export default function ChatClubAnglais() {
     if (!newRoomName.trim()) return;
     setCreatingRoom(true);
     try {
-      const res = await fetch('http://localhost:8000/rooms/', {
+      const res = await fetch(   `${API_BASE_URL}/rooms/`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authHeaders() },
         body: JSON.stringify({ name: newRoomName.trim(), description: newRoomDescription.trim() || null }),
@@ -375,7 +375,7 @@ export default function ChatClubAnglais() {
   const handleDeleteMessage = async (msg) => {
     setSelectedMsgForMenu(null);
     try {
-      await fetch(`http://localhost:8000/messages/${msg.id}`, { method: 'DELETE', headers: authHeaders() });
+      await fetch(`${API_BASE_URL}/messages/${msg.id}`, { method: 'DELETE', headers: authHeaders() });
     } catch (err) {
       console.error('Erreur suppression :', err);
     }
@@ -395,7 +395,7 @@ export default function ChatClubAnglais() {
     try {
       const formData = new FormData();
       formData.append('file', file);
-      const res = await fetch('http://localhost:8000/upload/', { method: 'POST', body: formData });
+      const res = await fetch(   `${API_BASE_URL}/upload/`, { method: 'POST', body: formData });
       if (!res.ok) throw new Error("Échec de l'upload");
       const data = await res.json();
       sendPayload({ receiver_id: activeContact.id, content: file.name, media_url: data.url });
@@ -416,7 +416,7 @@ export default function ChatClubAnglais() {
   };
 
   const askClaudeStyleTranslate = async (text, target) => {
-    const res = await fetch(`http://localhost:8000/translate/?text=${encodeURIComponent(text.slice(0, 490))}&target=${target}`);
+    const res = await fetch(`${API_BASE_URL}/translate/?text=${encodeURIComponent(text.slice(0, 490))}&target=${target}`);
     if (!res.ok) {
       const errData = await res.json().catch(() => ({}));
       throw new Error(errData.detail || `Erreur HTTP ${res.status}`);

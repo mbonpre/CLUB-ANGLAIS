@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { API_BASE_URL } from '../config';
 
 export default function Login({ onLoginSuccess }) {
   const [mode, setMode] = useState('login'); // 'login', 'forgot', 'request'
@@ -27,7 +28,7 @@ export default function Login({ onLoginSuccess }) {
     formData.append('section', loginSection);
 
     try {
-      const response = await fetch('http://localhost:8000/auth/login', {
+      const response = await fetch(   `${API_BASE_URL}/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         body: formData
@@ -51,7 +52,7 @@ export default function Login({ onLoginSuccess }) {
     setReqSubmitting(true);
 
     try {
-      const res = await fetch('http://localhost:8000/account-requests/', {
+      const res = await fetch(   `${API_BASE_URL}/account-requests/`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

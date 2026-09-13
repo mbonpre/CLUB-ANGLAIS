@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { API_BASE_URL } from '../config';
 
 const timeAgo = (isoDate) => {
   const diffMs = Date.now() - new Date(isoDate).getTime();
@@ -39,8 +40,8 @@ export default function Projects({ isAuthenticated, onRequestLogin }) {
     setLoadError('');
     try {
       const url = typeFilter && typeFilter !== 'all'
-        ? `http://localhost:8000/projects/?project_type=${typeFilter}`
-        : 'http://localhost:8000/projects/';
+        ? `${API_BASE_URL}/projects/?project_type=${typeFilter}`
+        :    `${API_BASE_URL}/projects/`;
       const res = await fetch(url);
       if (!res.ok) throw new Error(`Erreur serveur (${res.status})`);
       const data = await res.json();
@@ -70,7 +71,7 @@ export default function Projects({ isAuthenticated, onRequestLogin }) {
     const token = localStorage.getItem('token');
     setSubmitting(true);
     try {
-      const res = await fetch('http://localhost:8000/projects/', {
+      const res = await fetch(   `${API_BASE_URL}/projects/`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -106,7 +107,7 @@ export default function Projects({ isAuthenticated, onRequestLogin }) {
     setApplyFeedback(prev => ({ ...prev, [project.id]: null }));
 
     try {
-      const res = await fetch(`http://localhost:8000/projects/${project.id}/apply`, {
+      const res = await fetch(`${API_BASE_URL}/projects/${project.id}/apply`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
