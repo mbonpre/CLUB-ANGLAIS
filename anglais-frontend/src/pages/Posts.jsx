@@ -53,6 +53,12 @@ export default function Posts({ activeTab, isAuthenticated, onRequestLogin }) {
   const [commentInputs, setCommentInputs] = useState({});
   const [submittingCommentId, setSubmittingCommentId] = useState(null);
   const [expandedComments, setExpandedComments] = useState(new Set());
+  const [currentUser, setCurrentUser] = useState(null);
+  const [editingPostId, setEditingPostId] = useState(null);
+  const [editTitle, setEditTitle] = useState('');
+  const [editContent, setEditContent] = useState('');
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [deletingPostId, setDeletingPostId] = useState(null);
 
   const authHeaders = () => ({ 'Content-Type': 'application/json', 'Authorization': `Bearer ${localStorage.getItem('token')}` });
 
@@ -77,8 +83,16 @@ export default function Posts({ activeTab, isAuthenticated, onRequestLogin }) {
     } catch (e) {}
   };
 
+  const fetchCurrentUser = async () => {
+    if (!isAuthenticated) { setCurrentUser(null); return; }
+    try {
+      const r = await fetch('http://localhost:8000/auth/me', { headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` } });
+      if (r.ok) setCurrentUser(await r.json());
+    } catch (e) {}
+  };
+
   useEffect(() => { fetchPosts(); }, [activeTab]);
-  useEffect(() => { fetchMyLikes(); }, [isAuthenticated]);
+  useEffect(() => { fetchMyLikes(); fetchCurrentUser(); }, [isAuthenticated]);
 
   const handleCreatePost = async (e) => {
     e.preventDefault(); setError('');
@@ -99,6 +113,44 @@ export default function Posts({ activeTab, isAuthenticated, onRequestLogin }) {
       if (!r.ok) throw new Error(d.detail || "Erreur.");
       setTitle(''); setContent(''); setMediaFile(null); fetchPosts();
     } catch (e) { setError(e.message); }
+  };
+
+  const startEditPost = (post) => {
+    setEditingPostId(post.id);
+    setEditTitle(post.title);
+    setEditContent(post.content);
+  };
+
+  const cancelEditPost = () => {
+    setEditingPostId(null);
+    setEditTitle('');
+    setEditContent('');
+  };
+
+  const handleUpdatePost = async (post) => {
+    if (!editTitle.trim() || !editContent.trim()) return;
+    setSavingEdit(true);
+    try {
+      const r = await fetch(`http://localhost:8000/posts/${post.id}`, {
+        method: 'PUT', headers: authHeaders(),
+        body: JSON.stringify({ title: editTitle.trim(), content: editContent.trim(), image_url: post.image_url || null }),
+      });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.detail || "Erreur lors de la modification.");
+      setPosts(p => p.map(x => x.id === post.id ? { ...x, title: d.title, content: d.content } : x));
+      cancelEditPost();
+    } catch (e) { alert(e.message); } finally { setSavingEdit(false); }
+  };
+
+  const handleDeletePost = async (post) => {
+    if (!window.confirm("Supprimer définitivement cette publication ?")) return;
+    setDeletingPostId(post.id);
+    try {
+      const r = await fetch(`http://localhost:8000/posts/${post.id}`, { method: 'DELETE', headers: authHeaders() });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.detail || "Erreur lors de la suppression.");
+      setPosts(p => p.filter(x => x.id !== post.id));
+    } catch (e) { alert(e.message); } finally { setDeletingPostId(null); }
   };
 
   const handleTranslate = async (postId, text) => {
@@ -191,20 +243,53 @@ export default function Posts({ activeTab, isAuthenticated, onRequestLogin }) {
           const comments = post.comments || [];
           const expanded = expandedComments.has(post.id);
           const visibleComments = expanded ? comments : comments.slice(-2);
+          const isEditing = editingPostId === post.id;
+          const isOwner = currentUser && post.author_id === currentUser.id;
+          const canDelete = currentUser && (isOwner || ['ADMIN', 'COMMUNITY_MANAGER'].includes(currentUser.role));
 
           return (
             <div key={post.id} className={`p-5 rounded-lg shadow-sm border ${post.post_type === 'official' ? 'border-red-200 bg-red-50/40' : 'bg-white border-slate-200'}`}>
-              <div className="flex items-center gap-2.5 mb-2">
-                <div className="w-9 h-9 shrink-0 rounded-full bg-gradient-to-br from-red-500 to-rose-700 text-white flex items-center justify-center text-xs font-bold">{getInitials(post.author?.full_name)}</div>
-                <div>
-                  <h3 className="font-black text-base text-slate-900 leading-tight">{post.title}</h3>
-                  <p className="text-xs text-slate-500">{post.author?.full_name || 'Membre'}{post.author?.english_level && ` · ${post.author.english_level}`} · {timeAgo(post.created_at)}</p>
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-9 h-9 shrink-0 rounded-full bg-gradient-to-br from-red-500 to-rose-700 text-white flex items-center justify-center text-xs font-bold">{getInitials(post.author?.full_name)}</div>
+                  <div>
+                    <h3 className="font-black text-base text-slate-900 leading-tight">{post.title}</h3>
+                    <p className="text-xs text-slate-500">{post.author?.full_name || 'Membre'}{post.author?.english_level && ` · ${post.author.english_level}`} · {timeAgo(post.created_at)}</p>
+                  </div>
                 </div>
+                {(isOwner || canDelete) && !isEditing && (
+                  <div className="flex gap-1 shrink-0">
+                    {isOwner && (
+                      <button onClick={() => startEditPost(post)} className="text-xs bg-slate-100 hover:bg-slate-200 px-2 py-1 rounded">✏️</button>
+                    )}
+                    {canDelete && (
+                      <button onClick={() => handleDeletePost(post)} disabled={deletingPostId === post.id} className="text-xs bg-red-50 hover:bg-red-100 text-red-600 px-2 py-1 rounded disabled:opacity-50">
+                        {deletingPostId === post.id ? '...' : '🗑️'}
+                      </button>
+                    )}
+                  </div>
+                )}
               </div>
 
-              <p className="text-slate-700 text-sm whitespace-pre-wrap leading-relaxed mb-2 notranslate" translate="no">{displayed}</p>
+              {isEditing ? (
+                <div className="space-y-2 mb-3">
+                  <input type="text" value={editTitle} onChange={(e) => setEditTitle(e.target.value)}
+                    className="w-full p-2 border border-slate-200 rounded text-sm font-bold" required />
+                  <textarea value={editContent} onChange={(e) => setEditContent(e.target.value)}
+                    className="w-full p-2 border border-slate-200 rounded text-sm h-24 resize-none" required />
+                  <div className="flex gap-2">
+                    <button onClick={() => handleUpdatePost(post)} disabled={savingEdit}
+                      className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-3 py-1.5 rounded transition disabled:opacity-50">
+                      {savingEdit ? '...' : 'Enregistrer'}
+                    </button>
+                    <button onClick={cancelEditPost} className="text-xs text-slate-500 px-3 py-1.5">Annuler</button>
+                  </div>
+                </div>
+              ) : (
+                <p className="text-slate-700 text-sm whitespace-pre-wrap leading-relaxed mb-2 notranslate" translate="no">{displayed}</p>
+              )}
 
-              {post.image_url && (
+              {post.image_url && !isEditing && (
                 <div className="mb-3">
                   {post.image_url.match(/\.(jpeg|jpg|gif|png|webp)$/i) && <img src={post.image_url} alt="" className="rounded-lg max-h-72 object-cover w-full border border-slate-200" />}
                   {post.image_url.match(/\.(mp3|wav|ogg|m4a)$/i) && <audio controls className="w-full mt-2"><source src={post.image_url} /></audio>}

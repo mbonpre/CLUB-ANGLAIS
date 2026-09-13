@@ -46,19 +46,22 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
         user_id: str = payload.get("sub")
         if user_id is None:
             raise credentials_exception
+        active_section = payload.get("active_section")
     except Exception:
         raise credentials_exception
     user = db.query(User).filter(User.id == int(user_id)).first()
     if user is None:
         raise credentials_exception
 
-    # NOUVEAU — coupe l'accès immédiatement si le compte a été banni,
-    # même si le token JWT est encore valide (jusqu'ici il fallait attendre son expiration)
     if not user.is_active:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Ce compte a été suspendu par un administrateur.",
         )
+
+    # Section de travail pour cette connexion (permet au Super Admin de changer
+    # de contexte de section à chaque connexion, sans que ce soit persisté en base)
+    user.active_section = active_section or (user.section.value if user.section else None)
 
     return user
 

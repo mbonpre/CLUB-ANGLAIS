@@ -10,7 +10,9 @@ export default function Login({ onLoginSuccess }) {
   // Demande de compte
   const [reqFullName, setReqFullName] = useState('');
   const [reqEmail, setReqEmail] = useState('');
+  const [reqSection, setReqSection] = useState('debate');
   const [reqPassword, setReqPassword] = useState('');
+  const [loginSection, setLoginSection] = useState('debate');
   const [reqMessage, setReqMessage] = useState('');
   const [reqSuccess, setReqSuccess] = useState('');
   const [reqSubmitting, setReqSubmitting] = useState(false);
@@ -22,6 +24,7 @@ export default function Login({ onLoginSuccess }) {
     const formData = new URLSearchParams();
     formData.append('username', email);
     formData.append('password', password);
+    formData.append('section', loginSection);
 
     try {
       const response = await fetch('http://localhost:8000/auth/login', {
@@ -37,7 +40,7 @@ export default function Login({ onLoginSuccess }) {
       if (onLoginSuccess) onLoginSuccess();
       else window.location.reload();
     } catch (err) {
-      setError("Identifiants incorrects ou serveur indisponible.");
+      setError(err.message || "Identifiants incorrects ou serveur indisponible.");
     }
   };
 
@@ -54,6 +57,7 @@ export default function Login({ onLoginSuccess }) {
         body: JSON.stringify({
           full_name: reqFullName,
           email: reqEmail,
+          section: reqSection,
           password: reqPassword,
           message: reqMessage || null,
         }),
@@ -66,6 +70,7 @@ export default function Login({ onLoginSuccess }) {
       setReqEmail('');
       setReqPassword('');
       setReqMessage('');
+      setReqSection('debate');
     } catch (err) {
       setError(err.message);
     } finally {
@@ -147,6 +152,14 @@ export default function Login({ onLoginSuccess }) {
               <input type="email" value={email} onChange={(e) => setEmail(e.target.value)}
                 className="w-full p-2.5 border border-slate-200 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" required />
             </div>
+             <div> <label className="block text-sm font-medium text-slate-700 mb-1">Section souhaitée</label> 
+             <select value={loginSection} onChange={(e) => setLoginSection(e.target.value)} className="w-full p-2.5 border border-slate-200 rounded text-sm bg-white focus:outline-none focus:ring-2 focus:ring-red-500" required> 
+              <option value="debate">Débat</option>
+               <option value="interpretation">Interprétation</option>
+                <option value="news">Actualités</option> 
+                <option value="drama">Théâtre</option>
+                 </select> 
+                </div>
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Mot de passe</label>
               <input type="password" value={password} onChange={(e) => setPassword(e.target.value)}

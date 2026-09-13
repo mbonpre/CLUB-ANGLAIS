@@ -7,6 +7,7 @@ from app.models.post import Post, PostType, PostLike, PostComment
 from app.models.user import User, UserRole
 from app.schemas.post import PostCreate, PostResponse, CommentCreate, CommentResponse
 from app.services.auth_utils import get_current_user
+from pydantic import BaseModel
 
 router = APIRouter(prefix="/posts", tags=["Publications (double flux)"])
 
@@ -124,3 +125,45 @@ def like_comment(comment_id: int, db: Session = Depends(get_db), current_user: U
     comment.likes_count += 1
     db.commit()
     return {"likes_count": comment.likes_count}
+class PostUpdate(BaseModel):
+    title: str
+    content: str
+    image_url: Optional[str] = None
+
+
+@router.put("/{post_id}", response_model=PostResponse)
+def update_post(
+    post_id: int,
+    data: PostUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    post = db.query(Post).filter(Post.id == post_id).first()
+    if not post:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Publication introuvable.")
+    if post.author_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Vous ne pouvez modifier que vos propres publications.")
+
+    post.title = data.title
+    post.content = data.content
+    post.image_url = data.image_url
+    db.commit()
+    db.refresh(post)
+    return post
+
+
+@router.delete("/{post_id}")
+def delete_post(
+    post_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    post = db.query(Post).filter(Post.id == post_id).first()
+    if not post:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Publication introuvable.")
+    if post.author_id != current_user.id and current_user.role not in [UserRole.ADMIN, UserRole.COMMUNITY_MANAGER]:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Vous ne pouvez supprimer que vos propres publications.")
+
+    db.delete(post)
+    db.commit()
+    return {"message": "Publication supprimée."}

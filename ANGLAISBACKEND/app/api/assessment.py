@@ -6,6 +6,7 @@ from datetime import datetime
 
 from app.database import get_db
 from app.models.user import User, UserRole
+from app.models.section import Section
 from app.models.level_assessment import LevelAssessment
 from app.models.level_history import LevelHistory
 from app.models.assessment_question import AssessmentQuestion
@@ -24,6 +25,11 @@ def _require_admin_or_cm(u: User):
         raise HTTPException(status_code=403, detail="Réservé aux Admins et Community Managers.")
 
 
+def _section_scoped(u: User) -> bool:
+    """True si cet utilisateur doit être limité à sa propre section (Admin non-super-admin)."""
+    return u.role == UserRole.ADMIN and not u.is_super_admin and u.section is not None
+
+
 def _score_to_level(score: int, total: int) -> str:
     if total == 0:
         return "A1"
@@ -40,7 +46,10 @@ def _score_to_level(score: int, total: int) -> str:
 
 @router.get("/questions", response_model=List[QuestionPublic])
 def get_questions(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    questions = db.query(AssessmentQuestion).filter(AssessmentQuestion.is_active == True).all()
+    questions = db.query(AssessmentQuestion).filter(
+        AssessmentQuestion.is_active == True,
+        AssessmentQuestion.section == current_user.section,
+    ).all()
     return [QuestionPublic(id=q.id, text=q.text, options=json.loads(q.options)) for q in questions]
 
 
@@ -50,20 +59,17 @@ def submit_assessment(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    questions = db.query(AssessmentQuestion).filter(AssessmentQuestion.is_active == True).all()
+    questions = db.query(AssessmentQuestion).filter(
+        AssessmentQuestion.is_active == True,
+        AssessmentQuestion.section == current_user.section,
+    ).all()
     if not questions:
         raise HTTPException(status_code=400, detail="Aucune question disponible pour le moment.")
 
     score = sum(1 for q in questions if data.answers.get(q.id) == q.correct_index)
     suggested = _score_to_level(score, len(questions))
 
-    # NOUVEAU — le niveau est appliqué immédiatement (autonomie machine),
-    # l'admin pourra ensuite confirmer ou corriger via /validate
-    old_level = current_user.english_level
-    current_user.english_level = suggested
-    if old_level != suggested:
-        db.add(LevelHistory(user_id=current_user.id, previous_level=old_level, new_level=suggested))
-
+    # Le niveau n'est PAS appliqué ici — il attend la validation d'un Admin.
     assessment = LevelAssessment(
         user_id=current_user.id, score=score, total_questions=len(questions), suggested_level=suggested,
     )
@@ -77,12 +83,17 @@ def submit_assessment(
     )
 
 
-# --- Revue admin (confirmer ou corriger un résultat déjà appliqué) ---
+# --- Revue admin (seule action qui applique réellement le niveau) ---
 
 @router.get("/pending", response_model=List[PendingAssessmentResponse])
 def list_pending(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     _require_admin_or_cm(current_user)
-    return db.query(LevelAssessment).filter(LevelAssessment.is_validated == False).order_by(LevelAssessment.created_at.desc()).all()
+    query = db.query(LevelAssessment).join(User, LevelAssessment.user_id == User.id).filter(
+        LevelAssessment.is_validated == False
+    )
+    if _section_scoped(current_user):
+        query = query.filter(User.section == current_user.section)
+    return query.order_by(LevelAssessment.created_at.desc()).all()
 
 
 @router.post("/{assessment_id}/validate")
@@ -106,7 +117,10 @@ def validate_assessment(
     if not user:
         raise HTTPException(status_code=404, detail="Membre introuvable.")
 
-    # Si l'admin corrige (niveau différent de celui déjà appliqué), on retrace le changement
+    if _section_scoped(current_user) and user.section != current_user.section:
+        raise HTTPException(status_code=403, detail="Vous ne pouvez valider que les évaluations de votre section.")
+
+    # C'est ICI que le niveau est réellement appliqué pour la première fois.
     if user.english_level != data.final_level:
         old_level = user.english_level
         user.english_level = data.final_level
@@ -121,13 +135,21 @@ def validate_assessment(
     return {"message": f"Niveau de {user.full_name} confirmé : {data.final_level}"}
 
 
-# --- Gestion des questions (admin uniquement, modifiable à tout moment) ---
+# --- Gestion des questions (scopée par section) ---
 
 @router.get("/admin/questions", response_model=List[QuestionAdmin])
 def admin_list_questions(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     _require_admin_or_cm(current_user)
-    questions = db.query(AssessmentQuestion).order_by(AssessmentQuestion.id).all()
-    return [QuestionAdmin(id=q.id, text=q.text, options=json.loads(q.options), correct_index=q.correct_index, level=q.level, is_active=q.is_active) for q in questions]
+    query = db.query(AssessmentQuestion)
+    if _section_scoped(current_user):
+        query = query.filter(AssessmentQuestion.section == current_user.section)
+    questions = query.order_by(AssessmentQuestion.id).all()
+    return [
+        QuestionAdmin(
+            id=q.id, text=q.text, options=json.loads(q.options), correct_index=q.correct_index,
+            level=q.level, is_active=q.is_active, section=q.section.value if q.section else None,
+        ) for q in questions
+    ]
 
 
 @router.post("/admin/questions", response_model=QuestionAdmin, status_code=201)
@@ -135,9 +157,20 @@ def admin_create_question(data: QuestionCreate, db: Session = Depends(get_db), c
     _require_admin_or_cm(current_user)
     if len(data.options) != 4:
         raise HTTPException(status_code=400, detail="Il faut exactement 4 options.")
-    q = AssessmentQuestion(text=data.text, options=json.dumps(data.options), correct_index=data.correct_index, level=data.level, is_active=data.is_active)
+
+    section_value = current_user.section.value if _section_scoped(current_user) else data.section
+    if section_value not in [s.value for s in Section]:
+        raise HTTPException(status_code=400, detail="Section invalide.")
+
+    q = AssessmentQuestion(
+        text=data.text, options=json.dumps(data.options), correct_index=data.correct_index,
+        level=data.level, is_active=data.is_active, section=section_value,
+    )
     db.add(q); db.commit(); db.refresh(q)
-    return QuestionAdmin(id=q.id, text=q.text, options=data.options, correct_index=q.correct_index, level=q.level, is_active=q.is_active)
+    return QuestionAdmin(
+        id=q.id, text=q.text, options=data.options, correct_index=q.correct_index,
+        level=q.level, is_active=q.is_active, section=q.section.value if q.section else None,
+    )
 
 
 @router.put("/admin/questions/{question_id}", response_model=QuestionAdmin)
@@ -146,12 +179,19 @@ def admin_update_question(question_id: int, data: QuestionUpdate, db: Session = 
     q = db.query(AssessmentQuestion).filter(AssessmentQuestion.id == question_id).first()
     if not q:
         raise HTTPException(status_code=404, detail="Question introuvable.")
+    if _section_scoped(current_user) and q.section != current_user.section:
+        raise HTTPException(status_code=403, detail="Vous ne pouvez modifier que les questions de votre section.")
     if len(data.options) != 4:
         raise HTTPException(status_code=400, detail="Il faut exactement 4 options.")
+
+    section_value = current_user.section.value if _section_scoped(current_user) else data.section
     q.text = data.text; q.options = json.dumps(data.options); q.correct_index = data.correct_index
-    q.level = data.level; q.is_active = data.is_active
+    q.level = data.level; q.is_active = data.is_active; q.section = section_value
     db.commit()
-    return QuestionAdmin(id=q.id, text=q.text, options=data.options, correct_index=q.correct_index, level=q.level, is_active=q.is_active)
+    return QuestionAdmin(
+        id=q.id, text=q.text, options=data.options, correct_index=q.correct_index,
+        level=q.level, is_active=q.is_active, section=q.section.value if q.section else None,
+    )
 
 
 @router.delete("/admin/questions/{question_id}")
@@ -160,5 +200,7 @@ def admin_delete_question(question_id: int, db: Session = Depends(get_db), curre
     q = db.query(AssessmentQuestion).filter(AssessmentQuestion.id == question_id).first()
     if not q:
         raise HTTPException(status_code=404, detail="Question introuvable.")
+    if _section_scoped(current_user) and q.section != current_user.section:
+        raise HTTPException(status_code=403, detail="Vous ne pouvez supprimer que les questions de votre section.")
     db.delete(q); db.commit()
     return {"message": "Question supprimée."}

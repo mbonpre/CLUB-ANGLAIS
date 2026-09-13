@@ -47,12 +47,12 @@ export default function Assessment() {
         <p className="text-4xl mb-3">📊</p>
         <h2 className="text-xl font-bold text-slate-900 mb-2">Résultat de ton test</h2>
         <p className="text-sm text-slate-500 mb-4">{result.score} / {result.total_questions} bonnes réponses</p>
-        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
-          <p className="text-xs text-blue-700 font-semibold uppercase mb-1">Niveau suggéré par le système</p>
-          <p className="text-3xl font-black text-blue-900">{result.suggested_level}</p>
+        <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-4 mb-4">
+          <p className="text-xs text-emerald-700 font-semibold uppercase mb-1">Ton niveau a été mis à jour</p>
+          <p className="text-3xl font-black text-emerald-900">{result.suggested_level}</p>
         </div>
         <p className="text-xs text-slate-400">
-          ⏳ Ce résultat est calculé automatiquement. Il sera <strong>validé par un administrateur</strong> avant d'être appliqué officiellement à ton profil (approche hybride machine + humain).
+          Ce niveau est appliqué immédiatement à ton profil. Un administrateur peut encore le confirmer ou l'ajuster si besoin (approche hybride machine + humain).
         </p>
       </div>
     );

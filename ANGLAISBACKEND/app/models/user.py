@@ -3,6 +3,7 @@ from sqlalchemy.orm import relationship
 from datetime import datetime
 import enum
 from app.database import Base
+from app.models.section import Section
 
 class UserRole(str, enum.Enum):
     MEMBER = "MEMBER"
@@ -18,7 +19,8 @@ class User(Base):
     hashed_password = Column(String, nullable=False)
     role = Column(Enum(UserRole), default=UserRole.MEMBER, nullable=False)
     is_active = Column(Boolean, default=True)
-    is_super_admin = Column(Boolean, default=False, nullable=False)  # NOUVEAU
+    is_super_admin = Column(Boolean, default=False, nullable=False) 
+    section = Column(Enum(Section), nullable=True)
     bio = Column(String, nullable=True)
     skills = Column(String, nullable=True)
     english_level = Column(String, default="A1")

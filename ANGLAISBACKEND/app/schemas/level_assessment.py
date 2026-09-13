@@ -44,6 +44,7 @@ class QuestionAdmin(BaseModel):
     correct_index: int
     level: str
     is_active: bool
+    section: Optional[str] = None
     class Config:
         from_attributes = True
 
@@ -53,6 +54,7 @@ class QuestionCreate(BaseModel):
     correct_index: int
     level: str
     is_active: bool = True
+    section: str
 
 class QuestionUpdate(BaseModel):
     text: str
@@ -60,3 +62,4 @@ class QuestionUpdate(BaseModel):
     correct_index: int
     level: str
     is_active: bool
+    section: str

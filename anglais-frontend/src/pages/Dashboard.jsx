@@ -7,6 +7,8 @@ import Login from './Login.jsx';
 import AdminPanel from './AdminPanel.jsx';
 import Assessment from './Assessment.jsx';
 
+const SECTIONS = { debate: 'Débat', interpretation: 'Interprétation', news: 'Actualités', drama: 'Théâtre' };
+
 const WORD_OF_THE_DAY = [
   { en: 'Fluent', fr: 'Courant(e)', example: 'She speaks fluent English.' },
   { en: 'Overcome', fr: 'Surmonter', example: 'You can overcome your fear of speaking.' },
@@ -121,7 +123,14 @@ export default function Dashboard({ isAuthenticated, onLoginSuccess, onLogout })
             </nav>
           </div>
           {isAuthenticated ? (
-            <button onClick={onLogout} className="bg-red-600 hover:bg-red-700 text-white text-sm font-medium px-4 py-1.5 rounded transition shadow-sm">Déconnexion</button>
+            <div className="flex items-center">
+              {currentUser?.active_section && (
+                <span className="text-xs bg-white/10 text-slate-200 px-2.5 py-1 rounded-full mr-3">
+                  📍 {SECTIONS[currentUser.active_section] || currentUser.active_section}
+                </span>
+              )}
+              <button onClick={onLogout} className="bg-red-600 hover:bg-red-700 text-white text-sm font-medium px-4 py-1.5 rounded transition shadow-sm">Déconnexion</button>
+            </div>
           ) : (
             <button onClick={goToLogin} className="bg-white hover:bg-slate-100 text-slate-900 text-sm font-bold px-4 py-1.5 rounded transition shadow-sm">Se connecter</button>
           )}
@@ -219,6 +228,7 @@ export default function Dashboard({ isAuthenticated, onLoginSuccess, onLogout })
                     <p className="text-xs text-red-600 font-semibold uppercase mt-0.5">
                       {currentUser?.role === 'ADMIN' ? 'Super Admin' : currentUser?.role === 'COMMUNITY_MANAGER' ? 'Community Manager' : currentUser?.role === 'COACH' ? 'Coach' : 'Membre'}
                       {currentUser?.english_level && ` · ${currentUser.english_level}`}
+                      {currentUser?.active_section && ` · ${SECTIONS[currentUser.active_section] || currentUser.active_section}`}
                     </p>
                     <div className="mt-4 pt-4 border-t border-slate-100 text-left text-sm space-y-2">
                       <button onClick={() => setCurrentPage('members')} className="w-full text-left px-2 py-1.5 rounded hover:bg-slate-50 text-slate-700 font-medium transition flex items-center gap-2">👥 Annuaire des membres</button>

@@ -10,6 +10,13 @@ const LEVEL_COLORS = {
   B2: 'bg-amber-500', C1: 'bg-orange-500', C2: 'bg-red-600',
 };
 
+const SECTIONS = [
+  { value: 'debate', label: 'Débat' },
+  { value: 'interpretation', label: 'Interprétation' },
+  { value: 'news', label: 'Actualités' },
+  { value: 'drama', label: 'Théâtre' },
+];
+
 export default function AdminPanel() {
   const [tab, setTab] = useState('operationnel');
 
@@ -24,6 +31,7 @@ export default function AdminPanel() {
   const [loadingMembers, setLoadingMembers] = useState(true);
   const [editingLevelId, setEditingLevelId] = useState(null);
   const [banningId, setBanningId] = useState(null);
+  const [deletingId, setDeletingId] = useState(null);
 
   const [manageRooms, setManageRooms] = useState([]);
   const [closingRoomId, setClosingRoomId] = useState(null);
@@ -39,6 +47,62 @@ export default function AdminPanel() {
   const [roomActivity, setRoomActivity] = useState(null);
   const [pendingAssessments, setPendingAssessments] = useState([]);
   const [validatingId, setValidatingId] = useState(null);
+
+  const [questions, setQuestions] = useState([]);
+  const [showQuestionForm, setShowQuestionForm] = useState(false);
+  const [editingQuestion, setEditingQuestion] = useState(null);
+  const [qText, setQText] = useState('');
+  const [qOptions, setQOptions] = useState(['', '', '', '']);
+  const [qCorrect, setQCorrect] = useState(0);
+  const [qLevel, setQLevel] = useState('A1');
+  const [qSection, setQSection] = useState('debate');
+  const [savingQuestion, setSavingQuestion] = useState(false);
+
+  const [statsError, setStatsError] = useState('');
+
+  const [saFullName, setSaFullName] = useState('');
+  const [saEmail, setSaEmail] = useState('');
+  const [saPassword, setSaPassword] = useState('');
+  const [saSubmitting, setSaSubmitting] = useState(false);
+  const [saFeedback, setSaFeedback] = useState('');
+
+  const fetchQuestions = async () => {
+    try {
+      const res = await fetch('http://localhost:8000/assessment/admin/questions', { headers: authHeaders() });
+      setQuestions(res.ok ? await res.json() : []);
+    } catch (err) { console.error(err); }
+  };
+
+  const resetQuestionForm = () => {
+    setEditingQuestion(null); setQText(''); setQOptions(['', '', '', '']); setQCorrect(0);
+    setQLevel('A1'); setQSection(currentUser?.section || 'debate'); setShowQuestionForm(false);
+  };
+
+  const openEditQuestion = (q) => {
+    setEditingQuestion(q); setQText(q.text); setQOptions([...q.options]); setQCorrect(q.correct_index);
+    setQLevel(q.level); setQSection(q.section || 'debate'); setShowQuestionForm(true);
+  };
+
+  const handleSaveQuestion = async (e) => {
+    e.preventDefault();
+    if (qOptions.some(o => !o.trim())) { alert('Remplis les 4 options.'); return; }
+    setSavingQuestion(true);
+    try {
+      const payload = { text: qText.trim(), options: qOptions.map(o => o.trim()), correct_index: qCorrect, level: qLevel, is_active: true, section: qSection };
+      const url = editingQuestion ? `http://localhost:8000/assessment/admin/questions/${editingQuestion.id}` : 'http://localhost:8000/assessment/admin/questions';
+      const res = await fetch(url, { method: editingQuestion ? 'PUT' : 'POST', headers: authHeaders(), body: JSON.stringify(payload) });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || 'Erreur.');
+      resetQuestionForm();
+      fetchQuestions();
+    } catch (err) { alert(err.message); } finally { setSavingQuestion(false); }
+  };
+
+  const handleDeleteQuestion = async (id) => {
+    if (!window.confirm('Supprimer cette question ?')) return;
+    await fetch(`http://localhost:8000/assessment/admin/questions/${id}`, { method: 'DELETE', headers: authHeaders() });
+    fetchQuestions();
+  };
 
   const fetchPendingAssessments = async () => {
     try {
@@ -59,7 +123,6 @@ export default function AdminPanel() {
       fetchMembers();
     } catch (err) { alert(err.message); } finally { setValidatingId(null); }
   };
-  const [statsError, setStatsError] = useState('');
 
   const fetchRequests = async () => {
     setLoadingRequests(true);
@@ -114,6 +177,21 @@ export default function AdminPanel() {
       alert(err.message);
     } finally {
       setBanningId(null);
+    }
+  };
+
+  const handleDeleteUser = async (member) => {
+    if (!window.confirm(`SUPPRIMER DÉFINITIVEMENT le compte de ${member.full_name} ? Cette action est irréversible et effacera son accès au site.`)) return;
+    setDeletingId(member.id);
+    try {
+      const res = await fetch(`http://localhost:8000/admin/users/${member.id}`, { method: 'DELETE', headers: authHeaders() });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail);
+      setMembers(prev => prev.filter(m => m.id !== member.id));
+    } catch (err) {
+      alert(err.message);
+    } finally {
+      setDeletingId(null);
     }
   };
 
@@ -173,17 +251,20 @@ export default function AdminPanel() {
     fetchMembers();
     fetchManageRooms();
     fetchPendingAssessments();
+    fetchQuestions();
     fetch('http://localhost:8000/auth/me', { headers: authHeaders() }).then(r => r.json()).then(setCurrentUser).catch(() => {});
   }, []);
 
   const handlePromoteAdmin = async (member) => {
-    if (!window.confirm(`Promouvoir ${member.full_name} en Admin ? Il aura ensuite les mêmes pouvoirs que toi (sauf créer d'autres Admins).`)) return;
+    const section = member._section || 'debate';
+    const sectionLabel = SECTIONS.find(s => s.value === section)?.label || section;
+    if (!window.confirm(`Promouvoir ${member.full_name} en Admin de la section "${sectionLabel}" ? Il aura les pouvoirs d'Admin uniquement sur cette section.`)) return;
     setPromotingId(member.id);
     try {
-      const res = await fetch(`http://localhost:8000/auth/users/${member.id}/promote?new_role=ADMIN`, { method: 'PUT', headers: authHeaders() });
+      const res = await fetch(`http://localhost:8000/auth/users/${member.id}/promote?new_role=ADMIN&section=${section}`, { method: 'PUT', headers: authHeaders() });
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail);
-      setMembers(prev => prev.map(m => m.id === member.id ? { ...m, role: 'ADMIN' } : m));
+      setMembers(prev => prev.map(m => m.id === member.id ? { ...m, role: 'ADMIN', section } : m));
     } catch (err) {
       alert(err.message);
     } finally {
@@ -245,6 +326,20 @@ export default function AdminPanel() {
     }
   };
 
+  const handleSectionChange = async (userId, newSection, memberName) => {
+    if (!window.confirm(`Confirmer le changement de section de ${memberName} vers "${SECTIONS.find(s => s.value === newSection)?.label}" ?`)) return;
+    try {
+      const res = await fetch(`http://localhost:8000/admin/users/${userId}/section`, {
+        method: 'PATCH', headers: authHeaders(), body: JSON.stringify({ section: newSection }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail);
+      setMembers(prev => prev.map(m => m.id === userId ? { ...m, section: newSection } : m));
+    } catch (err) {
+      alert(err.message);
+    }
+  };
+
   const handleSendAnnouncement = async (e) => {
     e.preventDefault();
     setAnnounceFeedback('');
@@ -263,6 +358,25 @@ export default function AdminPanel() {
       setAnnounceFeedback(`⚠️ ${err.message}`);
     } finally {
       setAnnounceSubmitting(false);
+    }
+  };
+
+  const handleCreateSuperAdmin = async (e) => {
+    e.preventDefault();
+    setSaFeedback(''); setSaSubmitting(true);
+    try {
+      const res = await fetch('http://localhost:8000/auth/create-super-admin', {
+        method: 'POST', headers: authHeaders(),
+        body: JSON.stringify({ full_name: saFullName, email: saEmail, password: saPassword }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || "Erreur.");
+      setSaFeedback(`✅ ${data.message}`);
+      setSaFullName(''); setSaEmail(''); setSaPassword('');
+    } catch (err) {
+      setSaFeedback(`⚠️ ${err.message}`);
+    } finally {
+      setSaSubmitting(false);
     }
   };
 
@@ -285,6 +399,25 @@ export default function AdminPanel() {
 
       {tab === 'operationnel' && (
         <div className="space-y-6">
+          {currentUser?.is_super_admin && (
+            <div className="bg-white rounded-lg shadow-sm border border-purple-200 p-5">
+              <h2 className="font-bold text-slate-900 mb-3">👑 Créer un nouveau Super Admin</h2>
+              {saFeedback && <p className="text-xs mb-2">{saFeedback}</p>}
+              <form onSubmit={handleCreateSuperAdmin} className="space-y-2">
+                <input type="text" placeholder="Nom complet" value={saFullName} onChange={(e) => setSaFullName(e.target.value)}
+                  className="w-full p-2 border border-slate-200 rounded text-sm" required />
+                <input type="email" placeholder="Email" value={saEmail} onChange={(e) => setSaEmail(e.target.value)}
+                  className="w-full p-2 border border-slate-200 rounded text-sm" required />
+                <input type="password" placeholder="Mot de passe" value={saPassword} onChange={(e) => setSaPassword(e.target.value)}
+                  className="w-full p-2 border border-slate-200 rounded text-sm" required minLength={6} />
+                <button type="submit" disabled={saSubmitting}
+                  className="bg-purple-600 hover:bg-purple-700 text-white font-bold px-4 py-2 rounded text-sm transition disabled:opacity-50">
+                  {saSubmitting ? 'Création...' : 'Créer ce Super Admin'}
+                </button>
+              </form>
+            </div>
+          )}
+
           <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-5">
             <h2 className="font-bold text-slate-900 mb-3">
               Demandes de compte en attente {requests.length > 0 && <span className="text-red-600">({requests.length})</span>}
@@ -298,7 +431,9 @@ export default function AdminPanel() {
                 {requests.map(req => (
                   <div key={req.id} className="flex items-center justify-between p-3 border border-slate-200 rounded-lg">
                     <div>
-                      <p className="font-semibold text-sm text-slate-900">{req.full_name} — {req.email}</p>
+                      <p className="font-semibold text-sm text-slate-900">
+                        {req.full_name} — {req.email}
+                      </p>
                       {req.message && <p className="text-xs text-slate-500 italic mt-0.5">"{req.message}"</p>}
                     </div>
                     <div className="flex gap-2 shrink-0">
@@ -348,6 +483,59 @@ export default function AdminPanel() {
           </div>
 
           <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-5">
+            <div className="flex justify-between items-center mb-3">
+              <h2 className="font-bold text-slate-900">🧩 Questions du test de niveau ({questions.length})</h2>
+              <button onClick={() => { resetQuestionForm(); setShowQuestionForm(true); }} className="bg-red-600 hover:bg-red-700 text-white text-xs font-bold px-3 py-1.5 rounded transition">+ Ajouter</button>
+            </div>
+
+            {showQuestionForm && (
+              <form onSubmit={handleSaveQuestion} className="mb-4 p-4 border border-slate-200 rounded-lg space-y-2 bg-slate-50">
+                <input type="text" placeholder="Texte de la question" value={qText} onChange={(e) => setQText(e.target.value)} className="w-full p-2 border border-slate-200 rounded text-sm" required />
+                {qOptions.map((opt, idx) => (
+                  <div key={idx} className="flex items-center gap-2">
+                    <input type="radio" checked={qCorrect === idx} onChange={() => setQCorrect(idx)} title="Bonne réponse" />
+                    <input type="text" placeholder={`Option ${idx + 1}`} value={opt} onChange={(e) => { const n = [...qOptions]; n[idx] = e.target.value; setQOptions(n); }} className="flex-1 p-1.5 border border-slate-200 rounded text-xs" required />
+                  </div>
+                ))}
+                <div className="flex gap-2">
+                  <select value={qLevel} onChange={(e) => setQLevel(e.target.value)} className="p-1.5 border border-slate-200 rounded text-xs bg-white">
+                    {['A1','A2','B1','B2','C1','C2'].map(l => <option key={l} value={l}>{l}</option>)}
+                  </select>
+                  {currentUser?.is_super_admin && (
+                    <select value={qSection} onChange={(e) => setQSection(e.target.value)} className="p-1.5 border border-slate-200 rounded text-xs bg-white">
+                      {SECTIONS.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+                    </select>
+                  )}
+                </div>
+                <div className="flex gap-2">
+                  <button type="submit" disabled={savingQuestion} className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-3 py-1.5 rounded transition disabled:opacity-50">
+                    {savingQuestion ? '...' : (editingQuestion ? 'Enregistrer' : 'Créer')}
+                  </button>
+                  <button type="button" onClick={resetQuestionForm} className="text-xs text-slate-500 px-3 py-1.5">Annuler</button>
+                </div>
+              </form>
+            )}
+
+            <div className="space-y-2 max-h-72 overflow-y-auto">
+              {questions.map(q => (
+                <div key={q.id} className="flex items-center justify-between p-2.5 border border-slate-100 rounded-lg">
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-slate-800 truncate">{q.text}</p>
+                    <p className="text-[10px] text-slate-400">
+                      {q.level} · Réponse : {q.options[q.correct_index]}
+                      {q.section && ` · ${SECTIONS.find(s => s.value === q.section)?.label || q.section}`}
+                    </p>
+                  </div>
+                  <div className="flex gap-2 shrink-0">
+                    <button onClick={() => openEditQuestion(q)} className="text-xs bg-slate-100 hover:bg-slate-200 px-2 py-1 rounded">✏️</button>
+                    <button onClick={() => handleDeleteQuestion(q.id)} className="text-xs bg-red-50 hover:bg-red-100 text-red-600 px-2 py-1 rounded">🗑️</button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-5">
             <h2 className="font-bold text-slate-900 mb-3">📢 Envoyer une annonce officielle</h2>
             {announceFeedback && <p className="text-xs mb-2">{announceFeedback}</p>}
             <form onSubmit={handleSendAnnouncement} className="space-y-2">
@@ -375,7 +563,7 @@ export default function AdminPanel() {
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="text-left text-xs uppercase text-slate-400 border-b border-slate-100">
-                      <th className="pb-2">Nom</th><th className="pb-2">Email</th><th className="pb-2">Rôle</th><th className="pb-2">Niveau</th><th className="pb-2">Statut</th>
+                      <th className="pb-2">Nom</th><th className="pb-2">Email</th><th className="pb-2">Rôle</th><th className="pb-2">Section</th><th className="pb-2">Niveau</th><th className="pb-2">Statut</th><th className="pb-2">Supprimer</th>
                       {currentUser?.is_super_admin && <th className="pb-2">Admin</th>}
                     </tr>
                   </thead>
@@ -385,6 +573,19 @@ export default function AdminPanel() {
                         <td className="py-2 font-medium text-slate-800">{m.full_name}</td>
                         <td className="py-2 text-slate-500">{m.email}</td>
                         <td className="py-2 text-slate-500">{m.role}</td>
+                        <td className="py-2 text-xs">
+                          {currentUser?.is_super_admin ? (
+                            <select
+                              value={m.section || ''}
+                              onChange={(e) => handleSectionChange(m.id, e.target.value, m.full_name)}
+                              className="border border-slate-200 rounded px-2 py-1 text-xs bg-white focus:outline-none"
+                            >
+                              {SECTIONS.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+                            </select>
+                          ) : (
+                            SECTIONS.find(s => s.value === m.section)?.label || '—'
+                          )}
+                        </td>
                         <td className="py-2">
                           <select value={m.english_level} disabled={editingLevelId === m.id} onChange={(e) => handleLevelChange(m.id, e.target.value, m.full_name)}
                             className="border border-slate-200 rounded px-2 py-1 text-xs bg-white focus:outline-none disabled:opacity-50">
@@ -403,15 +604,34 @@ export default function AdminPanel() {
                             {banningId === m.id ? '...' : (m.is_active === false ? 'Réactiver' : 'Bannir')}
                           </button>
                         </td>
+                        <td className="py-2">
+                          <button
+                            onClick={() => handleDeleteUser(m)}
+                            disabled={deletingId === m.id || m.role === 'ADMIN'}
+                            title={m.role === 'ADMIN' ? "Impossible de supprimer un Admin" : ''}
+                            className="text-xs font-bold px-3 py-1 rounded-full bg-red-600 text-white hover:bg-red-700 disabled:opacity-40 transition"
+                          >
+                            {deletingId === m.id ? '...' : 'Supprimer'}
+                          </button>
+                        </td>
                         {currentUser?.is_super_admin && (
                           <td className="py-2">
                             {m.role === 'ADMIN' ? (
-                              <span className="text-[10px] text-slate-400">Déjà Admin</span>
+                              <span className="text-[10px] text-slate-400">Déjà Admin ({SECTIONS.find(s => s.value === m.section)?.label || '—'})</span>
                             ) : (
-                              <button onClick={() => handlePromoteAdmin(m)} disabled={promotingId === m.id}
-                                className="text-xs font-bold px-3 py-1 rounded-full bg-purple-50 text-purple-700 border border-purple-200 hover:bg-purple-100 disabled:opacity-50">
-                                {promotingId === m.id ? '...' : 'Promouvoir Admin'}
-                              </button>
+                              <div className="flex items-center gap-1">
+                                <select
+                                  defaultValue="debate"
+                                  onChange={(e) => (m._section = e.target.value)}
+                                  className="text-[10px] border border-slate-200 rounded px-1 py-1"
+                                >
+                                  {SECTIONS.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+                                </select>
+                                <button onClick={() => handlePromoteAdmin(m)} disabled={promotingId === m.id}
+                                  className="text-xs font-bold px-3 py-1 rounded-full bg-purple-50 text-purple-700 border border-purple-200 hover:bg-purple-100 disabled:opacity-50">
+                                  {promotingId === m.id ? '...' : 'Promouvoir Admin'}
+                                </button>
+                              </div>
                             )}
                           </td>
                         )}

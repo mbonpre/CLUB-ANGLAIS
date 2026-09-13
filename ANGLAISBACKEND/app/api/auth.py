@@ -1,8 +1,8 @@
 from datetime import datetime
-from fastapi import APIRouter, Depends, HTTPException, status
-from fastapi.security import OAuth2PasswordRequestForm
+from fastapi import APIRouter, Depends, HTTPException, status, Form
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, EmailStr
+from app.models.section import Section
 
 from app.database import get_db
 from app.models.user import User, UserRole
@@ -67,16 +67,34 @@ def register(user_data: UserRegister, db: Session = Depends(get_db), current_use
 
 
 @router.post("/login")
-def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
-    user = db.query(User).filter(User.email == form_data.username).first()
-    if not user or not verify_password(form_data.password, user.hashed_password):
+def login(
+    username: str = Form(...),
+    password: str = Form(...),
+    section: str = Form(...),
+    db: Session = Depends(get_db),
+):
+    user = db.query(User).filter(User.email == username).first()
+    if not user or not verify_password(password, user.hashed_password):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Email ou mot de passe incorrect")
     if not user.is_active:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Ce compte a été suspendu par un administrateur.")
+
+    if user.is_super_admin:
+        if section not in [s.value for s in Section]:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Section invalide.")
+        active_section = section
+    else:
+        if not user.section or section != user.section.value:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Section incorrecte. Vérifiez votre section actuelle ou contactez un administrateur si elle a changé.",
+            )
+        active_section = section
+
     user.last_login_at = datetime.now()
     db.commit()
-    access_token = create_access_token(data={"sub": str(user.id)})
-    return {"access_token": access_token, "token_type": "bearer"}
+    access_token = create_access_token(data={"sub": str(user.id), "active_section": active_section})
+    return {"access_token": access_token, "token_type": "bearer", "active_section": active_section}
 
 
 @router.get("/me")
@@ -85,19 +103,25 @@ def get_me(current_user: User = Depends(get_current_user)):
         "id": current_user.id, "full_name": current_user.full_name, "email": current_user.email,
         "role": current_user.role, "english_level": current_user.english_level,
         "is_super_admin": current_user.is_super_admin,
+        "section": current_user.section.value if current_user.section else None,
+        "active_section": getattr(current_user, "active_section", None),
     }
 
 
 @router.put("/users/{user_id}/promote")
-def promote_user(user_id: int, new_role: str, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    if new_role == UserRole.ADMIN.value and not current_user.is_super_admin:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Seul le Super Admin peut créer d'autres Admins.")
+def promote_user(user_id: int, new_role: str, section: str = None, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    if new_role == UserRole.ADMIN.value:
+        if not current_user.is_super_admin:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Seul le Super Admin peut créer d'autres Admins.")
+        if not section or section not in [s.value for s in Section]:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Une section valide est requise pour promouvoir un Admin.")
+
     if current_user.role == UserRole.ADMIN:
         pass
     elif current_user.role == UserRole.COMMUNITY_MANAGER:
-        if new_role != UserRole.COMMUNITY_MANAGER:
+        if new_role != UserRole.COMMUNITY_MANAGER.value:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Un Community Manager peut uniquement promouvoir un autre Community Manager.")
-    else:
+    elif not current_user.is_super_admin:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Vous n'avez pas les droits pour promouvoir un utilisateur.")
 
     user_to_update = db.query(User).filter(User.id == user_id).first()
@@ -107,5 +131,44 @@ def promote_user(user_id: int, new_role: str, db: Session = Depends(get_db), cur
         user_to_update.role = UserRole(new_role)
     except ValueError:
         raise HTTPException(status_code=400, detail="Rôle invalide.")
+
+    if new_role == UserRole.ADMIN.value:
+        user_to_update.section = Section(section)
+
     db.commit(); db.refresh(user_to_update)
-    return {"message": f"{user_to_update.full_name} promu {user_to_update.role}", "user_id": user_to_update.id, "new_role": user_to_update.role}
+    return {
+        "message": f"{user_to_update.full_name} promu {user_to_update.role}",
+        "user_id": user_to_update.id, "new_role": user_to_update.role,
+        "section": user_to_update.section.value if user_to_update.section else None,
+    }
+class SuperAdminCreate(BaseModel):
+    full_name: str
+    email: EmailStr
+    password: str
+
+
+@router.post("/create-super-admin", status_code=status.HTTP_201_CREATED)
+def create_super_admin(
+    data: SuperAdminCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    if not current_user.is_super_admin:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Seul un Super Admin peut créer un autre Super Admin.")
+
+    if db.query(User).filter(User.email == data.email).first():
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Un compte existe déjà avec cet email.")
+
+    new_admin = User(
+        full_name=data.full_name,
+        email=data.email,
+        hashed_password=hash_password(data.password),
+        role=UserRole.ADMIN,
+        is_super_admin=True,
+        english_level="C2",
+        is_active=True,
+    )
+    db.add(new_admin)
+    db.commit()
+    db.refresh(new_admin)
+    return {"message": f"{new_admin.full_name} est maintenant Super Admin.", "user_id": new_admin.id}
