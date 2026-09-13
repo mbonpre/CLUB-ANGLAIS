@@ -42,6 +42,7 @@ export default function Dashboard({ isAuthenticated, onLoginSuccess, onLogout })
   const [currentPage, setCurrentPage] = useState('home');
   const [activeTab, setActiveTab] = useState('official');
   const [currentUser, setCurrentUser] = useState(null);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const isStaff = currentUser && ['ADMIN', 'COMMUNITY_MANAGER'].includes(currentUser.role);
 
   const fetchCurrentUser = () => {
@@ -95,50 +96,98 @@ export default function Dashboard({ isAuthenticated, onLoginSuccess, onLogout })
       .catch(() => setPostCount(null));
   }, []);
 
-  const goToLogin = () => setCurrentPage('login');
-  const handleLoginSuccess = () => { onLoginSuccess(); setCurrentPage('home'); };
-  const handleChatClick = () => setCurrentPage(isAuthenticated ? 'chat' : 'login');
+  const goToLogin = () => { setCurrentPage('login'); setMobileMenuOpen(false); };
+  const handleLoginSuccess = () => { onLoginSuccess(); setCurrentPage('home'); setMobileMenuOpen(false); };
+  const handleChatClick = () => { setCurrentPage(isAuthenticated ? 'chat' : 'login'); setMobileMenuOpen(false); };
+  const navigateTo = (page) => { setCurrentPage(page); setMobileMenuOpen(false); };
+
+  const navLinkClass = (page) => currentPage === page
+    ? 'text-white border-b-2 border-red-500 pb-0.5 font-semibold'
+    : 'hover:text-white transition';
+
+  const mobileNavLinkClass = (page) => `w-full text-left px-3 py-2.5 rounded-lg text-sm font-medium transition ${
+    currentPage === page ? 'bg-white/15 text-white' : 'text-slate-200 hover:bg-white/10'
+  }`;
 
   return (
     <div className="min-h-screen bg-slate-100 font-sans notranslate flex flex-col" translate="no">
-      <header className="bg-blue-900 text-white border-b-4 border-red-600 sticky top-0 z-10 shadow-md">
-        <div className="max-w-6xl mx-auto px-4 py-3 flex justify-between items-center">
-          <div className="flex items-center space-x-6">
-            <h1 className="text-xl font-black tracking-wide flex items-center gap-2 cursor-pointer" onClick={() => setCurrentPage('home')}>
+      <header className="bg-blue-900 text-white border-b-4 border-red-600 sticky top-0 z-20 shadow-md">
+        <div className="max-w-6xl mx-auto px-3 sm:px-4 py-3 flex justify-between items-center gap-2">
+          <div className="flex items-center space-x-6 min-w-0">
+            <h1 className="text-base sm:text-xl font-black tracking-wide flex items-center gap-1.5 sm:gap-2 cursor-pointer shrink-0" onClick={() => navigateTo('home')}>
               <span>English Club</span>
-              <span className="text-xs bg-red-600 text-white font-bold px-1.5 py-0.5 rounded uppercase">YEE</span>
+              <span className="text-[10px] sm:text-xs bg-red-600 text-white font-bold px-1.5 py-0.5 rounded uppercase">YEE</span>
             </h1>
             <nav className="hidden md:flex space-x-5 text-sm font-medium text-slate-300">
-              <button onClick={() => setCurrentPage('home')} className={currentPage === 'home' ? 'text-white border-b-2 border-red-500 pb-0.5 font-semibold' : 'hover:text-white transition'}>Accueil</button>
-              <button onClick={() => setCurrentPage('members')} className={currentPage === 'members' ? 'text-white border-b-2 border-red-500 pb-0.5 font-semibold' : 'hover:text-white transition'}>Membres & CV</button>
-              <button onClick={() => setCurrentPage('projects')} className={currentPage === 'projects' ? 'text-white border-b-2 border-red-500 pb-0.5 font-semibold' : 'hover:text-white transition'}>Projets & Offres</button>
-              <button onClick={handleChatClick} className={currentPage === 'chat' ? 'text-white border-b-2 border-red-500 pb-0.5 font-semibold' : 'hover:text-white transition'}>
+              <button onClick={() => navigateTo('home')} className={navLinkClass('home')}>Accueil</button>
+              <button onClick={() => navigateTo('members')} className={navLinkClass('members')}>Membres & CV</button>
+              <button onClick={() => navigateTo('projects')} className={navLinkClass('projects')}>Projets & Offres</button>
+              <button onClick={handleChatClick} className={navLinkClass('chat')}>
                 Messagerie 💬 {!isAuthenticated && <span className="text-[10px] text-slate-400">(connexion requise)</span>}
               </button>
-              <button onClick={() => setCurrentPage(isAuthenticated ? 'assessment' : 'login')} className={currentPage === 'assessment' ? 'text-white border-b-2 border-red-500 pb-0.5 font-semibold' : 'hover:text-white transition'}>
+              <button onClick={() => navigateTo(isAuthenticated ? 'assessment' : 'login')} className={navLinkClass('assessment')}>
                 🎓 Test de niveau
               </button>
               {isStaff && (
-                <button onClick={() => setCurrentPage('admin')} className={currentPage === 'admin' ? 'text-white border-b-2 border-red-500 pb-0.5 font-semibold' : 'hover:text-white transition'}>⚙️ Administration</button>
+                <button onClick={() => navigateTo('admin')} className={navLinkClass('admin')}>⚙️ Administration</button>
               )}
             </nav>
           </div>
-          {isAuthenticated ? (
-            <div className="flex items-center">
-              {currentUser?.active_section && (
-                <span className="text-xs bg-white/10 text-slate-200 px-2.5 py-1 rounded-full mr-3">
-                  📍 {SECTIONS[currentUser.active_section] || currentUser.active_section}
-                </span>
-              )}
-              <button onClick={onLogout} className="bg-red-600 hover:bg-red-700 text-white text-sm font-medium px-4 py-1.5 rounded transition shadow-sm">Déconnexion</button>
-            </div>
-          ) : (
-            <button onClick={goToLogin} className="bg-white hover:bg-slate-100 text-slate-900 text-sm font-bold px-4 py-1.5 rounded transition shadow-sm">Se connecter</button>
-          )}
+
+          <div className="flex items-center gap-2 shrink-0">
+            {isAuthenticated ? (
+              <>
+                {currentUser?.active_section && (
+                  <span className="hidden sm:inline text-xs bg-white/10 text-slate-200 px-2.5 py-1 rounded-full max-w-[140px] truncate">
+                    📍 {SECTIONS[currentUser.active_section] || currentUser.active_section}
+                  </span>
+                )}
+                <button onClick={onLogout} className="hidden md:inline-flex bg-red-600 hover:bg-red-700 text-white text-sm font-medium px-4 py-1.5 rounded transition shadow-sm">Déconnexion</button>
+              </>
+            ) : (
+              <button onClick={goToLogin} className="hidden md:inline-flex bg-white hover:bg-slate-100 text-slate-900 text-sm font-bold px-4 py-1.5 rounded transition shadow-sm">Se connecter</button>
+            )}
+
+            {/* Bouton hamburger : visible uniquement sur mobile/tablette */}
+            <button
+              onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+              className="md:hidden p-2 -mr-1 rounded-lg text-white/90 hover:text-white hover:bg-white/10 transition text-lg"
+              aria-label="Menu"
+            >
+              {mobileMenuOpen ? '✕' : '☰'}
+            </button>
+          </div>
         </div>
+
+        {/* Menu déroulant mobile */}
+        {mobileMenuOpen && (
+          <div className="md:hidden border-t border-white/10 bg-blue-900 px-3 py-3 space-y-1">
+            <button onClick={() => navigateTo('home')} className={mobileNavLinkClass('home')}>🏠 Accueil</button>
+            <button onClick={() => navigateTo('members')} className={mobileNavLinkClass('members')}>👥 Membres & CV</button>
+            <button onClick={() => navigateTo('projects')} className={mobileNavLinkClass('projects')}>🚀 Projets & Offres</button>
+            <button onClick={handleChatClick} className={mobileNavLinkClass('chat')}>
+              💬 Messagerie {!isAuthenticated && <span className="text-[10px] text-slate-400">(connexion requise)</span>}
+            </button>
+            <button onClick={() => navigateTo(isAuthenticated ? 'assessment' : 'login')} className={mobileNavLinkClass('assessment')}>🎓 Test de niveau</button>
+            {isStaff && (
+              <button onClick={() => navigateTo('admin')} className={mobileNavLinkClass('admin')}>⚙️ Administration</button>
+            )}
+
+            <div className="pt-2 mt-2 border-t border-white/10">
+              {currentUser?.active_section && (
+                <p className="px-3 pb-2 text-xs text-slate-300">📍 Section : {SECTIONS[currentUser.active_section] || currentUser.active_section}</p>
+              )}
+              {isAuthenticated ? (
+                <button onClick={() => { onLogout(); setMobileMenuOpen(false); }} className="w-full bg-red-600 hover:bg-red-700 text-white text-sm font-medium px-4 py-2.5 rounded-lg transition">Déconnexion</button>
+              ) : (
+                <button onClick={goToLogin} className="w-full bg-white hover:bg-slate-100 text-slate-900 text-sm font-bold px-4 py-2.5 rounded-lg transition">Se connecter</button>
+              )}
+            </div>
+          </div>
+        )}
       </header>
 
-      <main className="max-w-6xl mx-auto px-4 py-6 flex-1 w-full">
+      <main className="max-w-6xl mx-auto px-3 sm:px-4 py-4 sm:py-6 flex-1 w-full">
         {currentPage === 'login' && <Login onLoginSuccess={handleLoginSuccess} />}
         {currentPage === 'members' && <Members />}
         {currentPage === 'projects' && <Projects isAuthenticated={isAuthenticated} onRequestLogin={goToLogin} />}
@@ -176,45 +225,45 @@ export default function Dashboard({ isAuthenticated, onLoginSuccess, onLogout })
         )}
 
         {currentPage === 'home' && (
-          <div className="space-y-6">
+          <div className="space-y-4 sm:space-y-6">
             {/* Bannière d'accueil */}
-            <div className="relative overflow-hidden rounded-xl text-white px-6 py-10 md:px-10 md:py-14 border-b-4 border-red-600 shadow-md">
+            <div className="relative overflow-hidden rounded-xl text-white px-4 py-6 sm:px-6 sm:py-10 md:px-10 md:py-14 border-b-4 border-red-600 shadow-md">
               <img src="/assets/yee-assemblee.jpg" alt="Assemblée Générale YEE" className="absolute inset-0 w-full h-full object-cover object-top brightness-125 contrast-105" />
               <div className="absolute inset-0 bg-gradient-to-t from-black/55 via-black/5 to-transparent"></div>
-              <div className="relative z-10 flex flex-col md:flex-row md:items-end md:justify-between gap-6">
-                <div className="bg-black/45 backdrop-blur-[2px] rounded-xl p-4 max-w-xl">
-                  <span className="inline-block text-[11px] font-bold uppercase tracking-widest text-red-400 mb-2">🇬🇧 YOUNG EAGLES OF ENGLISH (YEE) · Eagles Institute Training Center</span>
-                  <h2 className="text-2xl md:text-3xl font-black leading-tight mb-2">Apprends, pratique, progresse en anglais à Parakou.</h2>
-                  <p className="text-sm text-slate-200">
+              <div className="relative z-10 flex flex-col md:flex-row md:items-end md:justify-between gap-4 sm:gap-6">
+                <div className="bg-black/45 backdrop-blur-[2px] rounded-xl p-3 sm:p-4 max-w-xl">
+                  <span className="inline-block text-[10px] sm:text-[11px] font-bold uppercase tracking-widest text-red-400 mb-2">🇬🇧 YOUNG EAGLES OF ENGLISH (YEE) · Eagles Institute Training Center</span>
+                  <h2 className="text-lg sm:text-2xl md:text-3xl font-black leading-tight mb-2">Apprends, pratique, progresse en anglais à Parakou.</h2>
+                  <p className="text-xs sm:text-sm text-slate-200">
                     Le club international d'anglais de l'Eagles Institute Training Center — 8 mois / une année académique de pratique, débats et échanges avec une communauté active d'apprenants.
                   </p>
                 </div>
-                <div className="flex gap-4 shrink-0">
-                  <div className="text-center bg-black/45 border border-white/20 rounded-lg px-5 py-3 min-w-[92px] backdrop-blur-sm">
-                    <p className="text-2xl font-black">{memberCount ?? '—'}</p>
-                    <p className="text-[10px] uppercase tracking-wide text-slate-300">Membres</p>
+                <div className="flex gap-3 sm:gap-4 shrink-0">
+                  <div className="text-center bg-black/45 border border-white/20 rounded-lg px-4 sm:px-5 py-2.5 sm:py-3 min-w-[76px] sm:min-w-[92px] backdrop-blur-sm">
+                    <p className="text-xl sm:text-2xl font-black">{memberCount ?? '—'}</p>
+                    <p className="text-[9px] sm:text-[10px] uppercase tracking-wide text-slate-300">Membres</p>
                   </div>
-                  <div className="text-center bg-black/45 border border-white/20 rounded-lg px-5 py-3 min-w-[92px] backdrop-blur-sm">
-                    <p className="text-2xl font-black">{postCount ?? '—'}</p>
-                    <p className="text-[10px] uppercase tracking-wide text-slate-300">Publications</p>
+                  <div className="text-center bg-black/45 border border-white/20 rounded-lg px-4 sm:px-5 py-2.5 sm:py-3 min-w-[76px] sm:min-w-[92px] backdrop-blur-sm">
+                    <p className="text-xl sm:text-2xl font-black">{postCount ?? '—'}</p>
+                    <p className="text-[9px] sm:text-[10px] uppercase tracking-wide text-slate-300">Publications</p>
                   </div>
                 </div>
               </div>
               {!isAuthenticated && (
-                <button onClick={goToLogin} className="relative z-10 mt-6 bg-red-600 hover:bg-red-700 text-white font-bold px-5 py-2.5 rounded text-sm transition shadow-sm">
+                <button onClick={goToLogin} className="relative z-10 mt-4 sm:mt-6 bg-red-600 hover:bg-red-700 text-white font-bold px-4 sm:px-5 py-2 sm:py-2.5 rounded text-sm transition shadow-sm">
                   Rejoindre le club →
                 </button>
               )}
             </div>
 
             {/* Bandeau programmes */}
-            <div className="bg-white rounded-lg border border-slate-200 shadow-sm p-4 flex flex-wrap gap-3 justify-center text-xs">
+            <div className="bg-white rounded-lg border border-slate-200 shadow-sm p-3 sm:p-4 flex flex-wrap gap-2 sm:gap-3 justify-center text-[11px] sm:text-xs">
               {PROGRAMMES.map((p) => (
-                <span key={p} className="bg-slate-50 border border-slate-200 rounded-full px-3 py-1.5 font-semibold text-slate-700">{p}</span>
+                <span key={p} className="bg-slate-50 border border-slate-200 rounded-full px-2.5 sm:px-3 py-1 sm:py-1.5 font-semibold text-slate-700">{p}</span>
               ))}
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 sm:gap-6">
               <div className="md:col-span-1 space-y-4">
                 {isAuthenticated ? (
                   <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-4 text-center">
@@ -232,11 +281,11 @@ export default function Dashboard({ isAuthenticated, onLoginSuccess, onLogout })
                       {currentUser?.active_section && ` · ${SECTIONS[currentUser.active_section] || currentUser.active_section}`}
                     </p>
                     <div className="mt-4 pt-4 border-t border-slate-100 text-left text-sm space-y-2">
-                      <button onClick={() => setCurrentPage('members')} className="w-full text-left px-2 py-1.5 rounded hover:bg-slate-50 text-slate-700 font-medium transition flex items-center gap-2">👥 Annuaire des membres</button>
-                      <button onClick={() => setCurrentPage('projects')} className="w-full text-left px-2 py-1.5 rounded hover:bg-slate-50 text-slate-700 font-medium transition flex items-center gap-2">🚀 Projets & Offres</button>
-                      <button onClick={() => setCurrentPage('chat')} className="w-full text-left px-2 py-1.5 rounded hover:bg-slate-50 text-slate-700 font-medium transition flex items-center gap-2">💬 Messagerie</button>
+                      <button onClick={() => navigateTo('members')} className="w-full text-left px-2 py-1.5 rounded hover:bg-slate-50 text-slate-700 font-medium transition flex items-center gap-2">👥 Annuaire des membres</button>
+                      <button onClick={() => navigateTo('projects')} className="w-full text-left px-2 py-1.5 rounded hover:bg-slate-50 text-slate-700 font-medium transition flex items-center gap-2">🚀 Projets & Offres</button>
+                      <button onClick={() => navigateTo('chat')} className="w-full text-left px-2 py-1.5 rounded hover:bg-slate-50 text-slate-700 font-medium transition flex items-center gap-2">💬 Messagerie</button>
                       {isStaff && (
-                        <button onClick={() => setCurrentPage('admin')} className="w-full text-left px-2 py-1.5 rounded hover:bg-red-50 text-red-600 font-medium transition flex items-center gap-2">⚙️ Administration</button>
+                        <button onClick={() => navigateTo('admin')} className="w-full text-left px-2 py-1.5 rounded hover:bg-red-50 text-red-600 font-medium transition flex items-center gap-2">⚙️ Administration</button>
                       )}
                     </div>
                   </div>
@@ -247,8 +296,8 @@ export default function Dashboard({ isAuthenticated, onLoginSuccess, onLogout })
                     <p className="text-xs text-slate-500 mt-1 mb-3">Connecte-toi pour publier, commenter et accéder à la messagerie.</p>
                     <button onClick={goToLogin} className="w-full bg-red-600 hover:bg-red-700 text-white font-bold px-4 py-2 rounded text-sm transition">Se connecter</button>
                     <div className="mt-4 pt-4 border-t border-slate-100 text-left text-sm space-y-2">
-                      <button onClick={() => setCurrentPage('members')} className="w-full text-left px-2 py-1.5 rounded hover:bg-slate-50 text-slate-700 font-medium transition flex items-center gap-2">👥 Annuaire des membres</button>
-                      <button onClick={() => setCurrentPage('projects')} className="w-full text-left px-2 py-1.5 rounded hover:bg-slate-50 text-slate-700 font-medium transition flex items-center gap-2">🚀 Projets & Offres</button>
+                      <button onClick={() => navigateTo('members')} className="w-full text-left px-2 py-1.5 rounded hover:bg-slate-50 text-slate-700 font-medium transition flex items-center gap-2">👥 Annuaire des membres</button>
+                      <button onClick={() => navigateTo('projects')} className="w-full text-left px-2 py-1.5 rounded hover:bg-slate-50 text-slate-700 font-medium transition flex items-center gap-2">🚀 Projets & Offres</button>
                     </div>
                   </div>
                 )}
@@ -267,9 +316,13 @@ export default function Dashboard({ isAuthenticated, onLoginSuccess, onLogout })
               </div>
 
               <div className="md:col-span-3">
-                <div className="flex border border-slate-200 mb-6 bg-white rounded-lg p-1.5 shadow-sm">
-                  <button onClick={() => setActiveTab('official')} className={`flex-1 py-2.5 text-center font-bold text-sm rounded-md transition ${activeTab === 'official' ? 'bg-blue-900 text-white shadow' : 'text-slate-600 hover:text-slate-900'}`}>📢 À la Une du Club (Officiel)</button>
-                  <button onClick={() => setActiveTab('community')} className={`flex-1 py-2.5 text-center font-bold text-sm rounded-md transition ${activeTab === 'community' ? 'bg-red-600 text-white shadow' : 'text-slate-600 hover:text-slate-900'}`}>👥 Fil de la Communauté</button>
+                <div className="flex border border-slate-200 mb-4 sm:mb-6 bg-white rounded-lg p-1 sm:p-1.5 shadow-sm">
+                  <button onClick={() => setActiveTab('official')} className={`flex-1 py-2 sm:py-2.5 text-center font-bold text-xs sm:text-sm rounded-md transition ${activeTab === 'official' ? 'bg-blue-900 text-white shadow' : 'text-slate-600 hover:text-slate-900'}`}>
+                    📢 <span className="hidden sm:inline">À la Une du Club (Officiel)</span><span className="sm:hidden">À la Une</span>
+                  </button>
+                  <button onClick={() => setActiveTab('community')} className={`flex-1 py-2 sm:py-2.5 text-center font-bold text-xs sm:text-sm rounded-md transition ${activeTab === 'community' ? 'bg-red-600 text-white shadow' : 'text-slate-600 hover:text-slate-900'}`}>
+                    👥 <span className="hidden sm:inline">Fil de la Communauté</span><span className="sm:hidden">Communauté</span>
+                  </button>
                 </div>
                 <Posts activeTab={activeTab} isAuthenticated={isAuthenticated} onRequestLogin={goToLogin} />
               </div>

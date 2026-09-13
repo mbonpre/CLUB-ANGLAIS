@@ -203,24 +203,24 @@ export default function Posts({ activeTab, isAuthenticated, onRequestLogin }) {
   };
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6 sm:space-y-8">
       {isAuthenticated ? (
-        <div className="bg-white p-6 rounded-lg shadow-sm border border-slate-200">
-          <h2 className="text-lg font-bold mb-4 text-slate-900">Créer une publication</h2>
+        <div className="bg-white p-4 sm:p-6 rounded-lg shadow-sm border border-slate-200">
+          <h2 className="text-base sm:text-lg font-bold mb-4 text-slate-900">Créer une publication</h2>
           {error && <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-600 text-sm rounded">{error}</div>}
-          <form onSubmit={handleCreatePost} className="space-y-4">
+          <form onSubmit={handleCreatePost} className="space-y-3 sm:space-y-4">
             <input type="text" placeholder="Titre..." value={title} onChange={(e)=>setTitle(e.target.value)} className="w-full p-2.5 border border-slate-200 rounded text-sm focus:outline-none focus:ring-2 focus:ring-red-500" required />
             <textarea placeholder="Message..." value={content} onChange={(e)=>setContent(e.target.value)} className="w-full p-2.5 border border-slate-200 rounded text-sm h-24 focus:outline-none focus:ring-2 focus:ring-red-500 resize-none" required />
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Média</label>
-              <input type="file" accept="image/*,audio/*,video/*" onChange={(e)=>setMediaFile(e.target.files[0])} className="w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded file:border-0 file:text-sm file:font-semibold file:bg-red-50 file:text-red-700" />
+              <input type="file" accept="image/*,audio/*,video/*" onChange={(e)=>setMediaFile(e.target.files[0])} className="w-full text-xs sm:text-sm text-slate-500 file:mr-3 sm:file:mr-4 file:py-2 file:px-3 sm:file:px-4 file:rounded file:border-0 file:text-xs sm:file:text-sm file:font-semibold file:bg-red-50 file:text-red-700" />
             </div>
-            <div className="flex gap-4 items-center">
-              <select value={postType} onChange={(e)=>setPostType(e.target.value)} className="p-2 border border-slate-200 rounded text-sm bg-white">
+            <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 sm:items-center">
+              <select value={postType} onChange={(e)=>setPostType(e.target.value)} className="w-full sm:w-auto p-2 border border-slate-200 rounded text-sm bg-white">
                 <option value="community">Fil de la Communauté</option>
                 <option value="official">Annonce Officielle</option>
               </select>
-              <button type="submit" className="bg-red-600 hover:bg-red-700 text-white font-bold px-5 py-2 rounded text-sm">Publier</button>
+              <button type="submit" className="w-full sm:w-auto bg-red-600 hover:bg-red-700 text-white font-bold px-5 py-2 rounded text-sm">Publier</button>
             </div>
           </form>
         </div>
@@ -249,13 +249,13 @@ export default function Posts({ activeTab, isAuthenticated, onRequestLogin }) {
           const canDelete = currentUser && (isOwner || ['ADMIN', 'COMMUNITY_MANAGER'].includes(currentUser.role));
 
           return (
-            <div key={post.id} className={`p-5 rounded-lg shadow-sm border ${post.post_type === 'official' ? 'border-red-200 bg-red-50/40' : 'bg-white border-slate-200'}`}>
-              <div className="flex items-center justify-between mb-2">
-                <div className="flex items-center gap-2.5">
+            <div key={post.id} className={`p-3.5 sm:p-5 rounded-lg shadow-sm border ${post.post_type === 'official' ? 'border-red-200 bg-red-50/40' : 'bg-white border-slate-200'}`}>
+              <div className="flex items-start justify-between gap-2 mb-2">
+                <div className="flex items-center gap-2.5 min-w-0 flex-1">
                   <div className="w-9 h-9 shrink-0 rounded-full bg-gradient-to-br from-red-500 to-rose-700 text-white flex items-center justify-center text-xs font-bold">{getInitials(post.author?.full_name)}</div>
-                  <div>
-                    <h3 className="font-black text-base text-slate-900 leading-tight">{post.title}</h3>
-                    <p className="text-xs text-slate-500">{post.author?.full_name || 'Membre'}{post.author?.english_level && ` · ${post.author.english_level}`} · {timeAgo(post.created_at)}</p>
+                  <div className="min-w-0">
+                    <h3 className="font-black text-sm sm:text-base text-slate-900 leading-tight break-words">{post.title}</h3>
+                    <p className="text-[11px] sm:text-xs text-slate-500 truncate">{post.author?.full_name || 'Membre'}{post.author?.english_level && ` · ${post.author.english_level}`} · {timeAgo(post.created_at)}</p>
                   </div>
                 </div>
                 {(isOwner || canDelete) && !isEditing && (
@@ -298,7 +298,7 @@ export default function Posts({ activeTab, isAuthenticated, onRequestLogin }) {
                 </div>
               )}
 
-              <div className="flex items-center justify-between border-t border-slate-100 pt-2 mb-2 text-xs">
+              <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 border-t border-slate-100 pt-2 mb-2 text-xs">
                 <button onClick={() => handleTranslate(post.id, post.content)} disabled={isTranslating} className="text-red-600 font-semibold disabled:opacity-50">
                   🌐 {isTranslating ? "..." : (trans?.isTranslated ? "Voir l'original" : label)}
                 </button>
@@ -324,8 +324,8 @@ export default function Posts({ activeTab, isAuthenticated, onRequestLogin }) {
               {isAuthenticated ? (
                 <form onSubmit={(e) => handleAddComment(post.id, e)} className="flex gap-2 mt-2 items-center">
                   <div className="w-7 h-7 shrink-0 rounded-full bg-slate-200"></div>
-                  <input type="text" placeholder="Écrire un commentaire..." value={commentInputs[post.id] || ''} onChange={(e)=>setCommentInputs({...commentInputs,[post.id]:e.target.value})} className="flex-1 p-1.5 text-xs border border-slate-200 rounded-full bg-slate-50 focus:outline-none" />
-                  <button type="submit" disabled={submittingCommentId === post.id} className="text-red-600 text-xs font-bold px-2">{submittingCommentId === post.id ? '...' : 'Envoyer'}</button>
+                  <input type="text" placeholder="Écrire un commentaire..." value={commentInputs[post.id] || ''} onChange={(e)=>setCommentInputs({...commentInputs,[post.id]:e.target.value})} className="flex-1 min-w-0 p-1.5 text-xs border border-slate-200 rounded-full bg-slate-50 focus:outline-none" />
+                  <button type="submit" disabled={submittingCommentId === post.id} className="shrink-0 text-red-600 text-xs font-bold px-2">{submittingCommentId === post.id ? '...' : 'Envoyer'}</button>
                 </form>
               ) : (
                 <button onClick={onRequestLogin} className="text-xs text-red-600 hover:underline">🔒 Connecte-toi pour commenter</button>

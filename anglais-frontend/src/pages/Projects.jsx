@@ -128,38 +128,38 @@ export default function Projects({ isAuthenticated, onRequestLogin }) {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 sm:space-y-6">
       {/* En-tête du module + bouton de création */}
-      <div className="bg-white p-5 rounded-lg shadow-sm border border-slate-200 flex justify-between items-center">
+      <div className="bg-white p-4 sm:p-5 rounded-lg shadow-sm border border-slate-200 flex flex-col sm:flex-row justify-between sm:items-center gap-3">
         <div>
-          <h2 className="text-xl font-bold text-slate-900">Conseil des Projets & Missions 🎯</h2>
+          <h2 className="text-lg sm:text-xl font-bold text-slate-900">Conseil des Projets & Missions 🎯</h2>
           <p className="text-sm text-slate-500">Collaborez sur des projets et pratiquez l'anglais au quotidien.</p>
         </div>
         <button
           onClick={() => isAuthenticated ? setIsModalOpen(true) : onRequestLogin?.()}
-          className="bg-red-600 hover:bg-red-700 text-white font-bold text-sm px-4 py-2 rounded transition shadow-sm cursor-pointer"
+          className="w-full sm:w-auto shrink-0 bg-red-600 hover:bg-red-700 text-white font-bold text-sm px-4 py-2 rounded transition shadow-sm cursor-pointer"
         >
           {isAuthenticated ? '+ Publier un projet' : '🔒 Se connecter pour publier'}
         </button>
       </div>
 
       {/* Onglets de filtrage (filtrent désormais via l'API, pas juste en local) */}
-      <div className="flex gap-2 border-b border-slate-200 pb-3">
+      <div className="flex gap-2 border-b border-slate-200 pb-3 overflow-x-auto [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         <button
           onClick={() => setActiveTab('all')}
-          className={`px-4 py-2 rounded-full text-xs font-bold transition ${activeTab === 'all' ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
+          className={`shrink-0 px-4 py-2 rounded-full text-xs font-bold transition ${activeTab === 'all' ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
         >
           Tous les projets
         </button>
         <button
           onClick={() => setActiveTab('collaborative')}
-          className={`px-4 py-2 rounded-full text-xs font-bold transition ${activeTab === 'collaborative' ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
+          className={`shrink-0 px-4 py-2 rounded-full text-xs font-bold transition ${activeTab === 'collaborative' ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
         >
           Projets Collaboratifs
         </button>
         <button
           onClick={() => setActiveTab('mission')}
-          className={`px-4 py-2 rounded-full text-xs font-bold transition ${activeTab === 'mission' ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
+          className={`shrink-0 px-4 py-2 rounded-full text-xs font-bold transition ${activeTab === 'mission' ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
         >
           Missions et étapes
         </button>
@@ -177,19 +177,19 @@ export default function Projects({ isAuthenticated, onRequestLogin }) {
           </p>
         ) : (
           projects.map(project => (
-            <div key={project.id} className="bg-white p-6 rounded-lg shadow-sm border border-slate-200 relative">
-              <div className="flex justify-between items-start mb-2">
+            <div key={project.id} className="bg-white p-4 sm:p-6 rounded-lg shadow-sm border border-slate-200 relative">
+              <div className="flex flex-wrap justify-between items-start gap-2 mb-2">
                 <span className="text-[10px] font-extrabold uppercase tracking-wider text-red-600 bg-red-50 px-2.5 py-1 rounded border border-red-100">
                   {project.project_type === 'collaborative' ? 'PROJET COLLABORATIF' : 'MISSION / ÉTAPE'}
                 </span>
                 <span className="text-xs text-slate-400">{timeAgo(project.created_at)}</span>
               </div>
 
-              <h3 className="text-lg font-black text-slate-900 mb-1">{project.title}</h3>
+              <h3 className="text-base sm:text-lg font-black text-slate-900 mb-1 break-words">{project.title}</h3>
               <p className="text-slate-600 text-sm mb-1">{project.description}</p>
               <p className="text-xs text-slate-400 mb-4">Publié par {project.author?.full_name || 'Membre'}</p>
 
-              <div className="flex flex-wrap items-center justify-between gap-4 pt-3 border-t border-slate-100">
+              <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-center sm:justify-between gap-3 pt-3 border-t border-slate-100">
                 <div className="flex gap-2 flex-wrap">
                   {parseTags(project.tags).map((tag, idx) => (
                     <span key={idx} className="text-xs bg-slate-100 text-slate-600 px-2 py-1 rounded font-medium">
@@ -198,14 +198,14 @@ export default function Projects({ isAuthenticated, onRequestLogin }) {
                   ))}
                 </div>
 
-                <div className="flex items-center gap-3">
+                <div className="flex flex-wrap items-center gap-3">
                   <span className="text-xs font-semibold text-slate-500">
                     Niveau requis : <strong className="text-slate-800">{project.required_level}</strong>
                   </span>
                   <button
                     onClick={() => isAuthenticated ? handleApply(project) : onRequestLogin?.()}
                     disabled={applyingId === project.id}
-                    className="bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold px-4 py-2 rounded transition cursor-pointer disabled:opacity-50"
+                    className="w-full sm:w-auto bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold px-4 py-2 rounded transition cursor-pointer disabled:opacity-50"
                   >
                     {!isAuthenticated ? '🔒 Se connecter' : applyingId === project.id ? 'Envoi...' : 'Postuler / Répondre'}
                   </button>
@@ -222,19 +222,19 @@ export default function Projects({ isAuthenticated, onRequestLogin }) {
 
       {/* MODALE DE CRÉATION DE PROJET */}
       {isModalOpen && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-xs flex justify-center items-center z-50 p-4">
-          <div className="bg-white w-full max-w-lg rounded-xl shadow-xl border border-slate-200 overflow-hidden animate-in fade-in zoom-in duration-200">
-            <div className="flex justify-between items-center bg-slate-900 text-white px-6 py-4">
-              <h3 className="font-bold text-base">Publier un nouveau projet ou mission</h3>
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-xs flex justify-center items-center z-50 p-3 sm:p-4">
+          <div className="bg-white w-full max-w-lg rounded-xl shadow-xl border border-slate-200 overflow-hidden animate-in fade-in zoom-in duration-200 max-h-[90vh] flex flex-col">
+            <div className="flex justify-between items-center bg-slate-900 text-white px-4 sm:px-6 py-3 sm:py-4 shrink-0">
+              <h3 className="font-bold text-sm sm:text-base">Publier un nouveau projet ou mission</h3>
               <button
                 onClick={() => setIsModalOpen(false)}
-                className="text-slate-400 hover:text-white font-bold text-lg cursor-pointer"
+                className="text-slate-400 hover:text-white font-bold text-lg cursor-pointer shrink-0 ml-2"
               >
                 &times;
               </button>
             </div>
 
-            <form onSubmit={handleCreateProject} className="p-6 space-y-4">
+            <form onSubmit={handleCreateProject} className="p-4 sm:p-6 space-y-4 overflow-y-auto">
               {error && <div className="p-3 bg-red-50 border border-red-200 text-red-600 text-xs rounded">{error}</div>}
 
               <div>
@@ -260,7 +260,7 @@ export default function Projects({ isAuthenticated, onRequestLogin }) {
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-bold uppercase text-slate-600 mb-1">Type</label>
                   <select
@@ -301,18 +301,18 @@ export default function Projects({ isAuthenticated, onRequestLogin }) {
                 />
               </div>
 
-              <div className="flex justify-end gap-3 pt-4 border-t border-slate-100">
+              <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-2 sm:gap-3 pt-4 border-t border-slate-100">
                 <button
                   type="button"
                   onClick={() => setIsModalOpen(false)}
-                  className="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded transition cursor-pointer"
+                  className="w-full sm:w-auto px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded transition cursor-pointer"
                 >
                   Annuler
                 </button>
                 <button
                   type="submit"
                   disabled={submitting}
-                  className="bg-red-600 hover:bg-red-700 text-white text-xs font-bold px-5 py-2 rounded transition cursor-pointer disabled:opacity-50"
+                  className="w-full sm:w-auto bg-red-600 hover:bg-red-700 text-white text-xs font-bold px-5 py-2 rounded transition cursor-pointer disabled:opacity-50"
                 >
                   {submitting ? 'Publication...' : 'Publier le projet'}
                 </button>
