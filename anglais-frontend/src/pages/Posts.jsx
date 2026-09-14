@@ -1,338 +1,1173 @@
-import { useState, useEffect } from 'react';
-import { API_BASE_URL } from '../config';
+import React, { useState, useRef, useEffect } from 'react';
+import { API_BASE_URL, WS_BASE_URL } from '../config';
+const EN_WORDS = [
+  'hello', 'hi', 'how', 'are', 'you', 'today', 'thank', 'thanks', 'please', 'yes', 'no',
+  'good', 'morning', 'afternoon', 'evening', 'great', 'nice', 'meeting', 'practice',
+  'english', 'club', 'welcome', 'member', 'members', 'project', 'schedule', 'tomorrow',
+  'weekend', 'week', 'help', 'question', 'answer', 'speak', 'speaking', 'write', 'writing',
+  'listen', 'listening', 'read', 'reading', 'grammar', 'vocabulary', 'exercise', 'homework',
+  'teacher', 'student', 'lesson', 'conversation', 'fluent', 'fluently', 'pronunciation',
+];
 
-const detectLanguage = (t) => /[àâäéèêëîïôöùûüç]|(?:\b(le|la|les|des|une|un|est|vous|je|nous|avec|bonjour|merci)\b)/i.test(t) ? 'fr' : 'en';
-const getInitials = (n) => { if (!n) return '?'; const p = n.trim().split(/\s+/); return p.length >= 2 ? (p[0][0]+p[1][0]).toUpperCase() : p[0].slice(0,2).toUpperCase(); };
-const timeAgo = (iso) => {
-  const m = Math.floor((Date.now() - new Date(iso).getTime()) / 60000);
-  if (m < 1) return "À l'instant"; if (m < 60) return `${m} min`;
-  const h = Math.floor(m/60); if (h < 24) return `${h} h`;
-  return `${Math.floor(h/24)} j`;
+const FR_WORDS = [
+  'bonjour', 'salut', 'comment', 'allez', 'vas', 'vous', "aujourd'hui", 'merci', "s'il",
+  'plait', 'oui', 'non', 'bien', 'matin', 'après-midi', 'soir', 'super', 'sympa', 'réunion',
+  'pratiquer', 'anglais', 'club', 'bienvenue', 'membre', 'membres', 'projet', 'programme',
+  'demain', 'semaine', 'aide', 'question', 'réponse', 'parler', 'parlé', 'écrire', 'écouter',
+  'lire', 'grammaire', 'vocabulaire', 'exercice', 'devoir', 'professeur', 'étudiant', 'leçon',
+];
+
+const stripAccents = (str) => str.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+
+const getSuggestions = (text, lang) => {
+  const tokens = text.split(/\s+/);
+  const lastToken = tokens[tokens.length - 1] || '';
+  if (lastToken.length < 2) return [];
+  const dict = lang === 'fr' ? FR_WORDS : EN_WORDS;
+  const lower = stripAccents(lastToken.toLowerCase());
+  return dict
+    .filter(w => {
+      const normalized = stripAccents(w.toLowerCase());
+      return normalized.startsWith(lower) && normalized !== lower;
+    })
+    .slice(0, 5);
 };
 
-function CommentItem({ c, onLike }) {
-  const [liked, setLiked] = useState(false);
-  const [count, setCount] = useState(c.likes_count || 0);
-  const like = async () => {
-    if (liked) return;
-    setLiked(true); setCount(x => x + 1);
-    onLike(c.id);
-  };
-  return (
-    <div className="flex gap-2 mb-1.5">
-      <div className="w-7 h-7 shrink-0 rounded-full bg-gradient-to-br from-red-500 to-rose-700 text-white flex items-center justify-center text-[10px] font-bold">
-        {getInitials(c.author?.full_name)}
-      </div>
-      <div className="flex-1 min-w-0">
-        <div className="bg-slate-100 rounded-2xl px-3 py-1.5 inline-block max-w-full">
-          <p className="text-xs font-semibold text-slate-800">{c.author?.full_name || 'Membre'}</p>
-          <p className="text-xs text-slate-700 break-words">{c.text}</p>
-        </div>
-        <div className="flex items-center gap-3 mt-0.5 ml-2 text-[10px] text-slate-400 font-semibold">
-          <button onClick={like} className={liked ? 'text-red-600' : 'hover:underline'}>J'aime</button>
-          <span>{timeAgo(c.created_at)}</span>
-          {count > 0 && <span>❤️ {count}</span>}
-        </div>
-      </div>
-    </div>
-  );
-}
+const detectLanguage = (text) => {
+  const frenchMarkers = /[àâäéèêëîïôöùûüç]|(?:\b(le|la|les|des|une|un|est|vous|je|nous|avec|bonjour|merci)\b)/i;
+  return frenchMarkers.test(text || '') ? 'fr' : 'en';
+};
 
-export default function Posts({ activeTab, isAuthenticated, onRequestLogin }) {
-  const [posts, setPosts] = useState([]);
-  const [title, setTitle] = useState('');
-  const [content, setContent] = useState('');
-  const [postType, setPostType] = useState(activeTab === 'official' ? 'official' : 'community');
-  const [mediaFile, setMediaFile] = useState(null);
-  const [error, setError] = useState('');
-  const [postsError, setPostsError] = useState('');
-  const [loading, setLoading] = useState(true);
-  const [translations, setTranslations] = useState({});
-  const [translatingPostId, setTranslatingPostId] = useState(null);
-  const [myLikedIds, setMyLikedIds] = useState(new Set());
-  const [likingId, setLikingId] = useState(null);
-  const [commentInputs, setCommentInputs] = useState({});
-  const [submittingCommentId, setSubmittingCommentId] = useState(null);
-  const [expandedComments, setExpandedComments] = useState(new Set());
+const getInitials = (name) => {
+  if (!name) return '?';
+  const parts = name.trim().split(/\s+/);
+  return parts.length >= 2 ? (parts[0][0] + parts[1][0]).toUpperCase() : parts[0].slice(0, 2).toUpperCase();
+};
+
+// "default.png" est la valeur par défaut en base : on la traite comme "pas de photo"
+const hasCustomAvatar = (url) => !!url && url !== 'default.png';
+
+// Rendu d'un avatar : vraie photo si dispo, sinon initiales sur fond dégradé (comportement inchangé)
+const Avatar = ({ name, imageUrl, className = '' }) => (
+  <div className={`rounded-full bg-gradient-to-br from-red-500 to-rose-700 text-white flex items-center justify-center font-bold shadow-sm overflow-hidden shrink-0 ${className}`}>
+    {hasCustomAvatar(imageUrl)
+      ? <img src={imageUrl} alt={name} className="w-full h-full object-cover" />
+      : getInitials(name)}
+  </div>
+);
+
+const formatTime = (iso) => {
+  try {
+    return new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  } catch { return ''; }
+};
+
+// Un message "sticker" façon WhatsApp : un ou quelques emojis seuls, sans texte autour.
+// On l'affiche en grand, sans le fond de bulle habituel derrière le texte.
+const isEmojiOnly = (text) => {
+  if (!text) return false;
+  const stripped = text.trim();
+  if (stripped.length === 0 || stripped.length > 12) return false;
+  try {
+    return /^(\p{Extended_Pictographic}|\s)+$/u.test(stripped);
+  } catch {
+    // Environnements sans support des Unicode property escapes : on désactive juste l'effet visuel.
+    return false;
+  }
+};
+
+export default function ChatClubAnglais() {
+  const [darkMode, setDarkMode] = useState(false);
+  const [dictLang, setDictLang] = useState('en');
+  const [chatMode, setChatMode] = useState('private'); // 'private' | 'rooms'
+
+  const [rooms, setRooms] = useState([]);
+  const [activeRoom, setActiveRoom] = useState(null);
+  const [roomMessagesByRoom, setRoomMessagesByRoom] = useState({});
+  const [loadingRoomHistory, setLoadingRoomHistory] = useState(false);
+  const [showCreateRoom, setShowCreateRoom] = useState(false);
+  const [newRoomName, setNewRoomName] = useState('');
+  const [newRoomDescription, setNewRoomDescription] = useState('');
+  const [creatingRoom, setCreatingRoom] = useState(false);
+  const [joiningRoomId, setJoiningRoomId] = useState(null);
+  const [unreadRoomIds, setUnreadRoomIds] = useState(new Set());
+
   const [currentUser, setCurrentUser] = useState(null);
-  const [editingPostId, setEditingPostId] = useState(null);
-  const [editTitle, setEditTitle] = useState('');
-  const [editContent, setEditContent] = useState('');
-  const [savingEdit, setSavingEdit] = useState(false);
-  const [deletingPostId, setDeletingPostId] = useState(null);
+  const [members, setMembers] = useState([]);
+  const [conversationPreviews, setConversationPreviews] = useState({});
+  const [activeContact, setActiveContact] = useState(null);
+  const [messagesByContact, setMessagesByContact] = useState({});
+  const [loadingHistory, setLoadingHistory] = useState(false);
 
-  const authHeaders = () => ({ 'Content-Type': 'application/json', 'Authorization': `Bearer ${localStorage.getItem('token')}` });
+  const [inputText, setInputText] = useState('');
+  const [traductions, setTraductions] = useState({});
+  const [translationsVisible, setTranslationsVisible] = useState({});
+  const [translatingIds, setTranslatingIds] = useState({});
+  const [isCorrecting, setIsCorrecting] = useState(false);
+  const [replyingTo, setReplyingTo] = useState(null);
+  const [showStickerPicker, setShowStickerPicker] = useState(false);
+  const [showAttachMenu, setShowAttachMenu] = useState(false);
+  const [uploadingFile, setUploadingFile] = useState(false);
+  const [globalSearch, setGlobalSearch] = useState('');
+  const [wsConnected, setWsConnected] = useState(false);
+  const [selectedMsgForMenu, setSelectedMsgForMenu] = useState(null);
+  const [editingMessageId, setEditingMessageId] = useState(null);
+  const [forwardModalMsg, setForwardModalMsg] = useState(null);
+  const [forwardSearch, setForwardSearch] = useState('');
 
-  useEffect(() => { setPostType(activeTab === 'official' ? 'official' : 'community'); }, [activeTab]);
+  // --- Notifications / sourdine (nouveau) ---
+  const [mutedChats, setMutedChats] = useState(() => {
+    try { return new Set(JSON.parse(localStorage.getItem('mutedChats') || '[]')); } catch { return new Set(); }
+  });
 
-  const fetchPosts = async () => {
-    setPostsError('');
-    try {
-      const r = await fetch(`${API_BASE_URL}/posts/?post_type=${activeTab}`);
-      if (!r.ok) throw new Error(`Erreur serveur (${r.status})`);
-      const d = await r.json();
-      if (Array.isArray(d)) setPosts(d);
-    } catch (e) { setPostsError("Impossible de charger les publications. Vérifie le serveur backend."); }
-    finally { setLoading(false); }
+  const fileInputRef = useRef(null);
+  const docInputRef = useRef(null);
+  const stickerPickerRef = useRef(null);
+  const attachMenuRef = useRef(null);
+  const wsRef = useRef(null);
+  const messagesEndRef = useRef(null);
+  const longPressTimerRef = useRef(null);
+
+  // Refs "miroir" pour éviter les closures obsolètes dans le handler websocket
+  // (qui n'est (re)créé qu'au changement de currentUser.id).
+  const mutedChatsRef = useRef(mutedChats);
+  const activeContactRef = useRef(null);
+  const activeRoomRef = useRef(null);
+  const membersRef = useRef([]);
+  const roomsRef = useRef([]);
+
+  useEffect(() => { mutedChatsRef.current = mutedChats; }, [mutedChats]);
+  useEffect(() => { activeContactRef.current = activeContact; }, [activeContact]);
+  useEffect(() => { activeRoomRef.current = activeRoom; }, [activeRoom]);
+  useEffect(() => { membersRef.current = members; }, [members]);
+  useEffect(() => { roomsRef.current = rooms; }, [rooms]);
+
+  const currentMessages = activeContact ? (messagesByContact[activeContact.id] || []) : [];
+  const activeRoomMessages = activeRoom ? (roomMessagesByRoom[activeRoom.id] || []) : [];
+  const suggestions = getSuggestions(inputText, dictLang);
+  const stickerList = ['😀', '😂', '🔥', '👍', '❤️', '🎉', '🚀', '😎'];
+
+  const authHeaders = () => ({ 'Authorization': `Bearer ${localStorage.getItem('token')}` });
+
+  const chatKey = (type, id) => `${type}:${id}`;
+  const isMuted = (type, id) => mutedChats.has(chatKey(type, id));
+  const toggleMute = (type, id) => {
+    setMutedChats(prev => {
+      const next = new Set(prev);
+      const key = chatKey(type, id);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      localStorage.setItem('mutedChats', JSON.stringify([...next]));
+      return next;
+    });
   };
 
-  const fetchMyLikes = async () => {
-    if (!isAuthenticated) { setMyLikedIds(new Set()); return; }
+  // Petit bip généré (pas besoin de fichier audio) pour les nouveaux messages
+  const playBeep = () => {
     try {
-      const r = await fetch(   `${API_BASE_URL}/posts/my-likes`, { headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` } });
-      if (r.ok) setMyLikedIds(new Set(await r.json()));
-    } catch (e) {}
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const o = ctx.createOscillator();
+      const g = ctx.createGain();
+      o.connect(g); g.connect(ctx.destination);
+      o.frequency.value = 880;
+      g.gain.setValueAtTime(0.16, ctx.currentTime);
+      g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.35);
+      o.start(); o.stop(ctx.currentTime + 0.35);
+    } catch (e) { /* audio bloqué par le navigateur : on ignore silencieusement */ }
   };
 
-  const fetchCurrentUser = async () => {
-    if (!isAuthenticated) { setCurrentUser(null); return; }
-    try {
-      const r = await fetch(   `${API_BASE_URL}/auth/me`, { headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` } });
-      if (r.ok) setCurrentUser(await r.json());
-    } catch (e) {}
+  const notify = (title, body, muteKey) => {
+    if (mutedChatsRef.current.has(muteKey)) return;
+    playBeep();
+    if (typeof Notification !== 'undefined' && Notification.permission === 'granted' && document.hidden) {
+      try {
+        const n = new Notification(title, { body: body || '', icon: '/favicon.ico' });
+        n.onclick = () => { window.focus(); n.close(); };
+      } catch (e) { /* certains navigateurs mobiles n'autorisent pas new Notification() */ }
+    }
   };
 
-  useEffect(() => { fetchPosts(); }, [activeTab]);
-  useEffect(() => { fetchMyLikes(); fetchCurrentUser(); }, [isAuthenticated]);
+  const resolveSenderName = (senderId) => {
+    if (senderId === currentUser?.id) return 'Vous';
+    const m = membersRef.current.find(mm => mm.id === senderId);
+    return m?.full_name || 'Membre';
+  };
 
-  const handleCreatePost = async (e) => {
-    e.preventDefault(); setError('');
-    const token = localStorage.getItem("token");
-    try {
-      let mediaUrl = "";
-      if (mediaFile) {
-        const fd = new FormData(); fd.append("file", mediaFile);
-        const up = await fetch(API_BASE_URL + "/upload/", { method: "POST", body: fd });
-        if (!up.ok) throw new Error("Erreur upload.");
-        mediaUrl = (await up.json()).url;
+  useEffect(() => {
+    fetch(   `${API_BASE_URL}/auth/me`, { headers: authHeaders() })
+      .then(res => res.ok ? res.json() : null)
+      .then(setCurrentUser)
+      .catch(() => setCurrentUser(null));
+
+    fetch(   `${API_BASE_URL}/users/`)
+      .then(res => res.json())
+      .then(data => setMembers(Array.isArray(data) ? data : []))
+      .catch(() => setMembers([]));
+
+    fetchRooms();
+    refreshConversationPreviews();
+
+    if (typeof Notification !== 'undefined' && Notification.permission === 'default') {
+      Notification.requestPermission().catch(() => {});
+    }
+  }, []);
+
+  const isStaff = currentUser && ['ADMIN', 'COMMUNITY_MANAGER'].includes(currentUser.role);
+
+  const fetchRooms = () => {
+    fetch(   `${API_BASE_URL}/rooms/`, { headers: authHeaders() })
+      .then(res => res.ok ? res.json() : [])
+      .then(data => setRooms(Array.isArray(data) ? data : []))
+      .catch(() => setRooms([]));
+  };
+
+  const refreshConversationPreviews = () => {
+    fetch(   `${API_BASE_URL}/messages/conversations`, { headers: authHeaders() })
+      .then(res => res.ok ? res.json() : [])
+      .then(data => {
+        const map = {};
+        (data || []).forEach(c => { map[c.user.id] = c; });
+        setConversationPreviews(map);
+      })
+      .catch(() => {});
+  };
+
+  useEffect(() => {
+    const token = localStorage.getItem('token');
+    if (!token) return;
+
+    const ws = new WebSocket(`${WS_BASE_URL}/messages/ws?token=${token}`);
+    wsRef.current = ws;
+
+    ws.onopen = () => setWsConnected(true);
+    ws.onclose = () => setWsConnected(false);
+    ws.onerror = () => setWsConnected(false);
+
+    ws.onmessage = (event) => {
+      const msg = JSON.parse(event.data);
+
+      // Notification de validation de compte (nécessite que le backend envoie
+      // {type: "account_validated", message: "..."} via le websocket — voir
+      // notify_account_validated() côté messages.py).
+      if (msg.type === 'account_validated') {
+        notify('Compte validé ✅', msg.message || 'Votre compte a été validé.', 'account');
+        return;
       }
-      const r = await fetch(   `${API_BASE_URL}/posts/`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-        body: JSON.stringify({ title, content, post_type: postType, image_url: mediaUrl })
+
+      if (msg.type === 'room_message') {
+        setRoomMessagesByRoom(prev => {
+          const existing = prev[msg.room_id] || [];
+          if (existing.some(m => m.id === msg.id)) return prev;
+          return { ...prev, [msg.room_id]: [...existing, msg] };
+        });
+
+        const isOpenAndFocused = activeRoomRef.current?.id === msg.room_id && !document.hidden;
+        setUnreadRoomIds(prev => {
+          if (isOpenAndFocused) return prev;
+          const next = new Set(prev); next.add(msg.room_id); return next;
+        });
+
+        if (msg.sender?.id !== currentUser?.id && !isOpenAndFocused) {
+          const roomName = roomsRef.current.find(r => r.id === msg.room_id)?.name || 'Salon';
+          notify(`#${roomName}`, `${msg.sender?.full_name || 'Membre'} : ${msg.content || '📎 Pièce jointe'}`, chatKey('room', msg.room_id));
+        }
+
+        fetchRooms();
+        return;
+      }
+
+      if (msg.type === 'reaction_update') {
+        setMessagesByContact(prev => {
+          const updated = {};
+          for (const [cid, msgs] of Object.entries(prev)) {
+            updated[cid] = msgs.map(m => m.id === msg.id ? { ...m, reactions: msg.reactions } : m);
+          }
+          return updated;
+        });
+        return;
+      }
+
+      if (msg.deleted_id) {
+        setMessagesByContact(prev => {
+          const updated = {};
+          for (const [contactId, msgs] of Object.entries(prev)) {
+            updated[contactId] = msgs.filter(m => m.id !== msg.deleted_id);
+          }
+          return updated;
+        });
+        return;
+      }
+
+      const otherId = msg.sender_id === currentUser?.id ? msg.receiver_id : msg.sender_id;
+
+      setMessagesByContact(prev => {
+        const existing = prev[otherId] || [];
+        if (msg.edited) {
+          return { ...prev, [otherId]: existing.map(m => m.id === msg.id ? msg : m) };
+        }
+        if (existing.some(m => m.id === msg.id)) return prev;
+        return { ...prev, [otherId]: [...existing, msg] };
       });
-      const d = await r.json();
-      if (!r.ok) throw new Error(d.detail || "Erreur.");
-      setTitle(''); setContent(''); setMediaFile(null); fetchPosts();
-    } catch (e) { setError(e.message); }
-  };
 
-  const startEditPost = (post) => {
-    setEditingPostId(post.id);
-    setEditTitle(post.title);
-    setEditContent(post.content);
-  };
+      const isPrivateOpenAndFocused = activeContactRef.current?.id === otherId && !document.hidden;
+      if (msg.sender_id !== currentUser?.id && !msg.edited && !isPrivateOpenAndFocused) {
+        notify(resolveSenderName(msg.sender_id), msg.content || '📎 Pièce jointe', chatKey('contact', otherId));
+      }
 
-  const cancelEditPost = () => {
-    setEditingPostId(null);
-    setEditTitle('');
-    setEditContent('');
-  };
+      refreshConversationPreviews();
+    };
 
-  const handleUpdatePost = async (post) => {
-    if (!editTitle.trim() || !editContent.trim()) return;
-    setSavingEdit(true);
+    return () => ws.close();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentUser?.id]);
+
+  // Défilement auto vers le bas : conversation privée, salon, ou changement de conversation/salon actif.
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [currentMessages.length, activeRoomMessages.length, activeContact?.id, activeRoom?.id]);
+
+  // Correction du bug de scroll mobile : quand le clavier virtuel s'ouvre/se ferme
+  // (au clic sur le champ de saisie), la fenêtre visible change de taille sans que
+  // la mise en page ne se recalcule toujours correctement -> on force un recalage.
+  useEffect(() => {
+    const scrollToBottom = () => messagesEndRef.current?.scrollIntoView({ behavior: 'auto' });
+    const vv = window.visualViewport;
+    if (vv) {
+      vv.addEventListener('resize', scrollToBottom);
+      return () => vv.removeEventListener('resize', scrollToBottom);
+    }
+  }, []);
+
+  const menuRef = useRef(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (attachMenuRef.current && !attachMenuRef.current.contains(event.target)) setShowAttachMenu(false);
+      if (stickerPickerRef.current && !stickerPickerRef.current.contains(event.target)) setShowStickerPicker(false);
+      if (menuRef.current && !menuRef.current.contains(event.target)) setSelectedMsgForMenu(null);
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const openConversation = async (member) => {
+    setActiveContact(member);
+    setReplyingTo(null);
+    setLoadingHistory(true);
     try {
-      const r = await fetch(`${API_BASE_URL}/posts/${post.id}`, {
-        method: 'PUT', headers: authHeaders(),
-        body: JSON.stringify({ title: editTitle.trim(), content: editContent.trim(), image_url: post.image_url || null }),
-      });
-      const d = await r.json();
-      if (!r.ok) throw new Error(d.detail || "Erreur lors de la modification.");
-      setPosts(p => p.map(x => x.id === post.id ? { ...x, title: d.title, content: d.content } : x));
-      cancelEditPost();
-    } catch (e) { alert(e.message); } finally { setSavingEdit(false); }
+      const res = await fetch(`${API_BASE_URL}/messages/${member.id}`, { headers: authHeaders() });
+      const data = await res.json();
+      setMessagesByContact(prev => ({ ...prev, [member.id]: Array.isArray(data) ? data : [] }));
+      refreshConversationPreviews();
+    } catch (err) {
+      console.error('Erreur chargement historique :', err);
+    } finally {
+      setLoadingHistory(false);
+    }
   };
 
-  const handleDeletePost = async (post) => {
-    if (!window.confirm("Supprimer définitivement cette publication ?")) return;
-    setDeletingPostId(post.id);
-    try {
-      const r = await fetch(`${API_BASE_URL}/posts/${post.id}`, { method: 'DELETE', headers: authHeaders() });
-      const d = await r.json();
-      if (!r.ok) throw new Error(d.detail || "Erreur lors de la suppression.");
-      setPosts(p => p.filter(x => x.id !== post.id));
-    } catch (e) { alert(e.message); } finally { setDeletingPostId(null); }
+  const sendPayload = (payload) => {
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify(payload));
+    } else {
+      alert("Connexion en temps réel indisponible. Recharge la page.");
+    }
   };
 
-  const handleTranslate = async (postId, text) => {
-    const cur = translations[postId];
-    if (cur?.isTranslated) { setTranslations({ ...translations, [postId]: { ...cur, isTranslated: false } }); return; }
-    if (cur?.translatedText) { setTranslations({ ...translations, [postId]: { ...cur, isTranslated: true } }); return; }
-    setTranslatingPostId(postId);
-    try {
-      const target = detectLanguage(text) === 'fr' ? 'en' : 'fr';
-      const r = await fetch(`${API_BASE_URL}/translate/?text=${encodeURIComponent(text.slice(0,490))}&target=${target}`);
-      if (!r.ok) { const e = await r.json().catch(()=>({})); throw new Error(e.detail || `Erreur ${r.status}`); }
-      const d = await r.json();
-      if (!d.translatedText) throw new Error('Réponse vide');
-      setTranslations({ ...translations, [postId]: { translatedText: d.translatedText, isTranslated: true } });
-    } catch (e) {
-      setTranslations({ ...translations, [postId]: { translatedText: `⚠️ Indisponible (${e.message})`, isTranslated: true } });
-    } finally { setTranslatingPostId(null); }
-  };
-
-  const handleLike = async (postId) => {
-    if (!isAuthenticated) { onRequestLogin?.(); return; }
-    setLikingId(postId);
-    try {
-      const r = await fetch(`${API_BASE_URL}/posts/${postId}/like`, { method: 'POST', headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` } });
-      const d = await r.json();
-      setPosts(p => p.map(x => x.id === postId ? { ...x, likes_count: d.likes_count } : x));
-      setMyLikedIds(prev => { const n = new Set(prev); d.liked ? n.add(postId) : n.delete(postId); return n; });
-    } catch (e) {} finally { setLikingId(null); }
-  };
-
-  const handleAddComment = async (postId, e) => {
+  const handleSendMessage = (e) => {
     e.preventDefault();
-    if (!isAuthenticated) { onRequestLogin?.(); return; }
-    const text = commentInputs[postId];
-    if (!text?.trim()) return;
-    setSubmittingCommentId(postId);
-    try {
-      const r = await fetch(`${API_BASE_URL}/posts/${postId}/comments`, { method: 'POST', headers: authHeaders(), body: JSON.stringify({ text: text.trim() }) });
-      const d = await r.json();
-      if (!r.ok) throw new Error(d.detail || "Erreur.");
-      setPosts(p => p.map(x => x.id === postId ? { ...x, comments: [...x.comments, d] } : x));
-      setCommentInputs({ ...commentInputs, [postId]: '' });
-      setExpandedComments(prev => new Set(prev).add(postId));
-    } catch (e) { alert(e.message); } finally { setSubmittingCommentId(null); }
+    if (!inputText.trim()) return;
+
+    if (chatMode === 'rooms') {
+      if (!activeRoom) return;
+      sendPayload({ room_id: activeRoom.id, content: inputText.trim(), reply_to_id: replyingTo?.id || null });
+      setInputText('');
+      setReplyingTo(null);
+      return;
+    }
+
+    if (!activeContact) return;
+
+    if (editingMessageId) {
+      fetch(`${API_BASE_URL}/messages/${editingMessageId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify({ content: inputText.trim() }),
+      }).catch(err => console.error('Erreur modification :', err));
+      setEditingMessageId(null);
+      setInputText('');
+      return;
+    }
+
+    sendPayload({ receiver_id: activeContact.id, content: inputText.trim(), reply_to_id: replyingTo?.id || null });
+    setInputText('');
+    setReplyingTo(null);
   };
 
-  const likeComment = (commentId) => {
-    fetch(`${API_BASE_URL}/posts/comments/${commentId}/like`, { method: 'POST', headers: authHeaders() }).catch(()=>{});
+  const [pendingRequests, setPendingRequests] = useState([]);
+  const [showPendingModal, setShowPendingModal] = useState(false);
+
+  const fetchPending = async (roomId) => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/rooms/${roomId}/pending`, { headers: authHeaders() });
+      setPendingRequests(res.ok ? await res.json() : []);
+    } catch (err) { console.error(err); }
   };
+
+  const handleApprove = async (roomId, membershipId) => {
+    await fetch(`${API_BASE_URL}/rooms/${roomId}/approve/${membershipId}`, { method: 'POST', headers: authHeaders() });
+    fetchPending(roomId); fetchRooms();
+  };
+
+  const handleApproveAll = async (roomId) => {
+    await fetch(`${API_BASE_URL}/rooms/${roomId}/approve-all`, { method: 'POST', headers: authHeaders() });
+    fetchPending(roomId); fetchRooms();
+  };
+
+  const openRoom = async (room) => {
+    setActiveRoom(room);
+    setActiveContact(null);
+    setReplyingTo(null);
+    setUnreadRoomIds(prev => { const next = new Set(prev); next.delete(room.id); return next; });
+    if (!room.is_member) return;
+    setLoadingRoomHistory(true);
+    try {
+      const res = await fetch(`${API_BASE_URL}/rooms/${room.id}/messages`, { headers: authHeaders() });
+      const data = await res.json();
+      setRoomMessagesByRoom(prev => ({ ...prev, [room.id]: Array.isArray(data) ? data : [] }));
+    } catch (err) {
+      console.error('Erreur historique salon :', err);
+    } finally {
+      setLoadingRoomHistory(false);
+    }
+  };
+
+  const handleJoinRoom = async (room) => {
+    setJoiningRoomId(room.id);
+    try {
+      const res = await fetch(`${API_BASE_URL}/rooms/${room.id}/join`, { method: 'POST', headers: authHeaders() });
+      const data = await res.json();
+      fetchRooms();
+      if (data.status === 'pending') setActiveRoom({ ...room, is_pending: true });
+      else openRoom({ ...room, is_member: true });
+    } catch (err) {
+      console.error('Erreur adhésion salon :', err);
+    } finally {
+      setJoiningRoomId(null);
+    }
+  };
+
+  const handleLeaveRoom = async (room) => {
+    if (!window.confirm(`Quitter ${room.name} ?`)) return;
+    try {
+      await fetch(`${API_BASE_URL}/rooms/${room.id}/leave`, { method: 'POST', headers: authHeaders() });
+      setActiveRoom(null);
+      fetchRooms();
+    } catch (err) { console.error(err); }
+  };
+
+  const handleReact = async (msg, emoji) => {
+    try {
+      await fetch(`${API_BASE_URL}/messages/${msg.id}/react`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify({ emoji }),
+      });
+    } catch (err) { console.error(err); }
+  };
+
+  const handleCreateRoom = async (e) => {
+    e.preventDefault();
+    if (!newRoomName.trim()) return;
+    setCreatingRoom(true);
+    try {
+      const res = await fetch(   `${API_BASE_URL}/rooms/`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify({ name: newRoomName.trim(), description: newRoomDescription.trim() || null }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || 'Erreur lors de la création.');
+      setNewRoomName('');
+      setNewRoomDescription('');
+      setShowCreateRoom(false);
+      fetchRooms();
+    } catch (err) {
+      alert(err.message);
+    } finally {
+      setCreatingRoom(false);
+    }
+  };
+
+  const handleEditMessage = (msg) => {
+    setEditingMessageId(msg.id);
+    setInputText(msg.content || '');
+    setSelectedMsgForMenu(null);
+  };
+
+  const handleDeleteMessage = async (msg) => {
+    setSelectedMsgForMenu(null);
+    try {
+      await fetch(`${API_BASE_URL}/messages/${msg.id}`, { method: 'DELETE', headers: authHeaders() });
+    } catch (err) {
+      console.error('Erreur suppression :', err);
+    }
+  };
+
+  const executeForward = (targetMember) => {
+    if (!forwardModalMsg) return;
+    sendPayload({ receiver_id: targetMember.id, content: forwardModalMsg.content, media_url: forwardModalMsg.media_url });
+    setForwardModalMsg(null);
+    setForwardSearch('');
+  };
+
+  const handleFileUpload = async (e) => {
+    const file = e.target.files[0];
+    if (!file || !activeContact) return;
+    setUploadingFile(true);
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      const res = await fetch(   `${API_BASE_URL}/upload/`, { method: 'POST', body: formData });
+      if (!res.ok) throw new Error("Échec de l'upload");
+      const data = await res.json();
+      sendPayload({ receiver_id: activeContact.id, content: file.name, media_url: data.url, reply_to_id: replyingTo?.id || null });
+      setReplyingTo(null);
+    } catch (err) {
+      alert("Impossible d'envoyer ce fichier.");
+      console.error(err);
+    } finally {
+      setUploadingFile(false);
+      setShowAttachMenu(false);
+      e.target.value = '';
+    }
+  };
+
+  const handleSendSticker = (emoji) => {
+    if (chatMode === 'rooms') {
+      if (!activeRoom) return;
+      sendPayload({ room_id: activeRoom.id, content: emoji, reply_to_id: replyingTo?.id || null });
+    } else {
+      if (!activeContact) return;
+      sendPayload({ receiver_id: activeContact.id, content: emoji, reply_to_id: replyingTo?.id || null });
+    }
+    setShowStickerPicker(false);
+    setReplyingTo(null);
+  };
+
+  const askClaudeStyleTranslate = async (text, target) => {
+    const res = await fetch(`${API_BASE_URL}/translate/?text=${encodeURIComponent(text.slice(0, 490))}&target=${target}`);
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({}));
+      throw new Error(errData.detail || `Erreur HTTP ${res.status}`);
+    }
+    const data = await res.json();
+    if (!data.translatedText) throw new Error('Réponse vide');
+    return data.translatedText;
+  };
+
+  const basculerTraduction = async (msg) => {
+    if (translationsVisible[msg.id]) {
+      setTranslationsVisible(prev => ({ ...prev, [msg.id]: false }));
+      return;
+    }
+    if (traductions[msg.id]) {
+      setTranslationsVisible(prev => ({ ...prev, [msg.id]: true }));
+      return;
+    }
+
+    setTranslatingIds(prev => ({ ...prev, [msg.id]: true }));
+    try {
+      const source = detectLanguage(msg.content);
+      const target = source === 'fr' ? 'en' : 'fr';
+      const translated = await askClaudeStyleTranslate(msg.content || '', target);
+      setTraductions(prev => ({ ...prev, [msg.id]: translated }));
+      setTranslationsVisible(prev => ({ ...prev, [msg.id]: true }));
+    } catch (e) {
+      setTraductions(prev => ({ ...prev, [msg.id]: `⚠️ Traduction indisponible (${e.message}).` }));
+      setTranslationsVisible(prev => ({ ...prev, [msg.id]: true }));
+    } finally {
+      setTranslatingIds(prev => {
+        const copie = { ...prev };
+        delete copie[msg.id];
+        return copie;
+      });
+    }
+  };
+
+  const correctText = async () => {
+    if (!inputText.trim()) return;
+    setIsCorrecting(true);
+    try {
+      const languageParam = dictLang === 'fr' ? 'fr' : 'en-US';
+      const response = await fetch('https://api.languagetool.org/v2/check', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({ text: inputText, language: languageParam }),
+      });
+      const data = await response.json();
+      let correctedText = inputText;
+      if (data?.matches?.length > 0) {
+        let offsetShift = 0;
+        data.matches.forEach(match => {
+          if (match.replacements?.length > 0) {
+            const replacement = match.replacements[0].value;
+            const start = match.offset + offsetShift;
+            correctedText = correctedText.substring(0, start) + replacement + correctedText.substring(start + match.length);
+            offsetShift += replacement.length - match.length;
+          }
+        });
+      }
+      setInputText(correctedText);
+    } catch (e) {
+      alert('Correction indisponible pour le moment.');
+    } finally {
+      setIsCorrecting(false);
+    }
+  };
+
+  const applySuggestion = (word) => {
+    const tokens = inputText.split(/\s+/);
+    tokens[tokens.length - 1] = word;
+    setInputText(tokens.join(' ') + ' ');
+  };
+
+  const scrollToBottomSoon = () => setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 300);
+
+  const startLongPress = (msg) => {
+    longPressTimerRef.current = setTimeout(() => setReplyingTo(msg), 450);
+  };
+  const cancelLongPress = () => {
+    if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current);
+  };
+
+  const otherMembers = members.filter(m => m.id !== currentUser?.id);
+  const filteredMembers = otherMembers.filter(m => m.full_name.toLowerCase().includes(globalSearch.toLowerCase()));
+
+  const sortedMembers = [...filteredMembers].sort((a, b) => {
+    const previewA = conversationPreviews[a.id];
+    const previewB = conversationPreviews[b.id];
+    if (previewA && previewB) return new Date(previewB.last_message_at) - new Date(previewA.last_message_at);
+    if (previewA) return -1;
+    if (previewB) return 1;
+    return a.full_name.localeCompare(b.full_name);
+  });
+
+  const ReplyBanner = ({ target }) => target ? (
+    <div className={`px-4 py-2 border-t flex items-center justify-between text-xs ${darkMode ? 'bg-[#1E40AF] border-slate-800' : 'bg-slate-100 border-slate-200'}`}>
+      <div className="flex items-center gap-2 min-w-0">
+        <span className="w-1 h-8 bg-red-600 rounded-full shrink-0"></span>
+        <div className="min-w-0">
+          <p className="font-bold text-red-600">Réponse à {resolveSenderName(target.sender_id || target.sender?.id)}</p>
+          <p className="truncate text-slate-500">{target.content || '📎 Pièce jointe'}</p>
+        </div>
+      </div>
+      <button onClick={() => setReplyingTo(null)} className="font-bold hover:opacity-75 shrink-0 ml-2">✕</button>
+    </div>
+  ) : null;
+
+  const ReplyQuote = ({ reply, isMe }) => reply ? (
+    <div className={`mb-1.5 pl-2 py-1 border-l-4 rounded text-xs ${isMe ? 'border-white/70 bg-black/10' : 'border-red-500 bg-black/5'}`}>
+      <p className="font-bold">{resolveSenderName(reply.sender_id)}</p>
+      <p className="truncate opacity-90 max-w-[220px]">{reply.content || '📎 Pièce jointe'}</p>
+    </div>
+  ) : null;
 
   return (
-    <div className="space-y-6 sm:space-y-8">
-      {isAuthenticated ? (
-        <div className="bg-white p-4 sm:p-6 rounded-lg shadow-sm border border-slate-200">
-          <h2 className="text-base sm:text-lg font-bold mb-4 text-slate-900">Créer une publication</h2>
-          {error && <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-600 text-sm rounded">{error}</div>}
-          <form onSubmit={handleCreatePost} className="space-y-3 sm:space-y-4">
-            <input type="text" placeholder="Titre..." value={title} onChange={(e)=>setTitle(e.target.value)} className="w-full p-2.5 border border-slate-200 rounded text-sm focus:outline-none focus:ring-2 focus:ring-red-500" required />
-            <textarea placeholder="Message..." value={content} onChange={(e)=>setContent(e.target.value)} className="w-full p-2.5 border border-slate-200 rounded text-sm h-24 focus:outline-none focus:ring-2 focus:ring-red-500 resize-none" required />
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Média</label>
-              <input type="file" accept="image/*,audio/*,video/*" onChange={(e)=>setMediaFile(e.target.files[0])} className="w-full text-xs sm:text-sm text-slate-500 file:mr-3 sm:file:mr-4 file:py-2 file:px-3 sm:file:px-4 file:rounded file:border-0 file:text-xs sm:file:text-sm file:font-semibold file:bg-red-50 file:text-red-700" />
-            </div>
-            <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 sm:items-center">
-              <select value={postType} onChange={(e)=>setPostType(e.target.value)} className="w-full sm:w-auto p-2 border border-slate-200 rounded text-sm bg-white">
-                <option value="community">Fil de la Communauté</option>
-                <option value="official">Annonce Officielle</option>
-              </select>
-              <button type="submit" className="w-full sm:w-auto bg-red-600 hover:bg-red-700 text-white font-bold px-5 py-2 rounded text-sm">Publier</button>
-            </div>
-          </form>
+    <div translate="no" className={`max-w-6xl mx-auto sm:rounded-2xl shadow-xl border overflow-hidden flex h-[85vh] sm:h-[685px] relative transition-colors duration-200 ${darkMode ? 'bg-[#1E3A8A] text-[#EDEFF3] border-slate-800' : 'bg-white text-[#15181D] border-slate-100'}`}>
+
+      <div className={`${(activeContact || activeRoom) ? 'hidden' : 'flex'} sm:flex w-full sm:w-1/3 border-r flex-col ${darkMode ? 'border-[#3B5FCC] bg-[#1E40AF]' : 'border-[#DBEAFE] bg-[#EFF6FF]'}`}>
+        <div className="px-4 py-3 flex justify-between items-center bg-[#1E3A8A] border-b-2 border-red-600">
+          <div>
+            <h2 className="font-bold text-lg text-white">Messagerie</h2>
+            <p className="text-[10px] text-slate-400">{wsConnected ? '🟢 Connecté en temps réel' : '🔴 Connexion en cours...'}</p>
+          </div>
+          <button onClick={() => setDarkMode(!darkMode)} className="p-2 rounded-xl text-sm text-white/80 hover:text-white transition">
+            {darkMode ? '☀️' : '🌙'}
+          </button>
         </div>
-      ) : (
-        <div className="bg-white p-6 rounded-lg shadow-sm border border-slate-200 text-center">
-          <p className="text-sm text-slate-600 mb-3">🔒 Connecte-toi pour publier.</p>
-          <button onClick={onRequestLogin} className="bg-red-600 hover:bg-red-700 text-white font-bold px-5 py-2 rounded text-sm">Se connecter</button>
+
+        <div className={`flex border-b ${darkMode ? 'border-[#3B5FCC]' : 'border-[#EFF6FF]'}`}>
+          <button
+            onClick={() => setChatMode('private')}
+            className={`flex-1 py-2 text-xs font-bold transition ${chatMode === 'private' ? 'bg-red-600 text-white' : (darkMode ? 'text-slate-400 hover:bg-[#1E3A8A]' : 'text-slate-500 hover:bg-white')}`}
+          >
+            💬 Messages privés
+          </button>
+          <button
+            onClick={() => setChatMode('rooms')}
+            className={`flex-1 py-2 text-xs font-bold transition ${chatMode === 'rooms' ? 'bg-red-600 text-white' : (darkMode ? 'text-slate-400 hover:bg-[#1E3A8A]' : 'text-slate-500 hover:bg-white')}`}
+          >
+            📢 Salons
+          </button>
+        </div>
+
+        {chatMode === 'private' && (
+          <div className={`px-4 py-2 border-b ${darkMode ? 'border-[#3B5FCC]' : 'border-[#EFF6FF]'}`}>
+            <input
+              type="text" value={globalSearch} onChange={(e) => setGlobalSearch(e.target.value)}
+              placeholder="Rechercher un membre..."
+              className={`w-full px-3 py-1.5 border rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-red-500 ${darkMode ? 'bg-[#1D4ED8] border-slate-700 text-white' : 'bg-white border-slate-200'}`}
+            />
+          </div>
+        )}
+
+        {chatMode === 'rooms' && isStaff && (
+          <div className={`px-4 py-2 border-b ${darkMode ? 'border-[#3B5FCC]' : 'border-[#EFF6FF]'}`}>
+            <button
+              onClick={() => setShowCreateRoom(true)}
+              className="w-full text-xs font-bold py-2 rounded-lg border-2 border-dashed border-red-300 text-red-600 hover:bg-red-50 transition"
+            >
+              + Créer un salon
+            </button>
+          </div>
+        )}
+
+        <div className="flex-1 overflow-y-auto">
+          {chatMode === 'private' ? (
+            sortedMembers.map(member => {
+              const preview = conversationPreviews[member.id];
+              return (
+                <button
+                  key={member.id}
+                  onClick={() => openConversation(member)}
+                  className={`w-full flex items-center gap-3 px-4 py-3 text-left transition border-b ${darkMode ? 'border-[#3B5FCC]' : 'border-[#EFF6FF]'} ${
+                    activeContact?.id === member.id ? (darkMode ? 'bg-[#2563EB]' : 'bg-red-50/70') : (darkMode ? 'hover:bg-[#1E3A8A]' : 'hover:bg-white')
+                  }`}
+                >
+                  <Avatar name={member.full_name} imageUrl={member.profile_image} className="w-11 h-11 text-sm" />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex justify-between items-baseline">
+                      <h4 className="text-sm font-semibold truncate">{member.full_name}</h4>
+                      {preview && <span className="text-[10px] text-slate-400 shrink-0">{formatTime(preview.last_message_at)}</span>}
+                    </div>
+                    <p className="text-xs text-slate-400 truncate">{preview?.last_message || member.english_level}</p>
+                  </div>
+                  {preview?.unread_count > 0 && (
+                    <span className="bg-red-600 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full shrink-0">{preview.unread_count}</span>
+                  )}
+                </button>
+              );
+            })
+          ) : (
+            rooms.length === 0 ? (
+              <p className="text-xs text-slate-400 italic p-4">Aucun salon pour le moment.</p>
+            ) : rooms.map(room => (
+              <button
+                key={room.id}
+                onClick={() => room.is_member ? openRoom(room) : null}
+                className={`w-full flex items-center gap-3 px-4 py-3 text-left transition border-b ${darkMode ? 'border-[#3B5FCC]' : 'border-[#EFF6FF]'} ${
+                  activeRoom?.id === room.id ? (darkMode ? 'bg-[#2563EB]' : 'bg-red-50/70') : (darkMode ? 'hover:bg-[#1E3A8A]' : 'hover:bg-white')
+                } ${!room.is_member ? 'opacity-80' : ''}`}
+              >
+                <div className="w-11 h-11 rounded-full text-white flex items-center justify-center font-bold shrink-0 text-sm shadow-sm" style={{ background: room.color || '#DC2626' }}>
+                  #
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex justify-between items-baseline">
+                    <h4 className="text-sm font-semibold truncate">{room.name}{room.is_closed && ' 🔒'}</h4>
+                    <span className="text-[10px] text-slate-400 shrink-0">{room.member_count} membre(s)</span>
+                  </div>
+                  <p className="text-xs text-slate-400 truncate">{room.description || `${room.message_count} messages`}</p>
+                </div>
+                {unreadRoomIds.has(room.id) && room.is_member && <span className="w-2.5 h-2.5 rounded-full bg-red-600 shrink-0"></span>}
+                {room.is_pending && <span className="text-[10px] text-amber-600 font-bold shrink-0">En attente</span>}
+                {!room.is_member && !room.is_pending && !room.is_closed && (
+                  <span
+                    onClick={(e) => { e.stopPropagation(); handleJoinRoom(room); }}
+                    className="text-[10px] font-bold bg-red-600 text-white px-2 py-1 rounded-full shrink-0 hover:bg-red-700"
+                  >
+                    {joiningRoomId === room.id ? '...' : 'Rejoindre'}
+                  </span>
+                )}
+              </button>
+            ))
+          )}
+        </div>
+      </div>
+
+      {showCreateRoom && (
+        <div className="absolute inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
+          <div className={`w-full max-w-sm rounded-2xl shadow-2xl border p-5 ${darkMode ? 'bg-[#1E40AF] border-slate-700 text-white' : 'bg-white border-slate-200'}`}>
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="font-bold text-sm">Créer un nouveau salon</h3>
+              <button onClick={() => setShowCreateRoom(false)} className="text-lg">✕</button>
+            </div>
+            <form onSubmit={handleCreateRoom} className="space-y-3">
+              <input
+                type="text" placeholder="Nom du salon (ex: Debate)" value={newRoomName} onChange={(e) => setNewRoomName(e.target.value)}
+                className={`w-full p-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500 ${darkMode ? 'bg-[#1D4ED8] border-slate-700 text-white' : 'bg-slate-50 border-slate-200'}`} required
+              />
+              <textarea
+                placeholder="Description (optionnel)" value={newRoomDescription} onChange={(e) => setNewRoomDescription(e.target.value)}
+                className={`w-full p-2.5 border rounded-lg text-sm h-16 resize-none focus:outline-none focus:ring-2 focus:ring-red-500 ${darkMode ? 'bg-[#1D4ED8] border-slate-700 text-white' : 'bg-slate-50 border-slate-200'}`}
+              />
+              <button type="submit" disabled={creatingRoom} className="w-full bg-red-600 hover:bg-red-700 text-white font-bold p-2.5 rounded-lg text-sm transition disabled:opacity-50">
+                {creatingRoom ? 'Création...' : 'Créer le salon'}
+              </button>
+            </form>
+          </div>
         </div>
       )}
-
-      <div className="space-y-4">
-        {loading ? <p className="text-center text-slate-500 py-6">Chargement...</p>
-        : postsError ? <p className="text-center text-red-700 py-6 bg-red-50 border border-red-200 rounded-lg px-4">⚠️ {postsError}</p>
-        : posts.length === 0 ? <p className="text-center text-slate-500 py-6 bg-white p-6 rounded-lg border border-slate-200">Aucune publication.</p>
-        : posts.map(post => {
-          const trans = translations[post.id];
-          const displayed = trans?.isTranslated ? trans.translatedText : post.content;
-          const isLiked = myLikedIds.has(post.id);
-          const isTranslating = translatingPostId === post.id;
-          const label = detectLanguage(post.content) === 'fr' ? 'Traduire en anglais' : 'Traduire en français';
-          const comments = post.comments || [];
-          const expanded = expandedComments.has(post.id);
-          const visibleComments = expanded ? comments : comments.slice(-2);
-          const isEditing = editingPostId === post.id;
-          const isOwner = currentUser && post.author_id === currentUser.id;
-          const canDelete = currentUser && (isOwner || ['ADMIN', 'COMMUNITY_MANAGER'].includes(currentUser.role));
-
-          return (
-            <div key={post.id} className={`p-3.5 sm:p-5 rounded-lg shadow-sm border ${post.post_type === 'official' ? 'border-red-200 bg-red-50/40' : 'bg-white border-slate-200'}`}>
-              <div className="flex items-start justify-between gap-2 mb-2">
-                <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                  <div className="w-9 h-9 shrink-0 rounded-full bg-gradient-to-br from-red-500 to-rose-700 text-white flex items-center justify-center text-xs font-bold">{getInitials(post.author?.full_name)}</div>
+      <div className={`${(activeContact || activeRoom) ? 'flex' : 'hidden'} sm:flex w-full sm:w-2/3 flex-col ${darkMode ? 'bg-[#1E3A8A]' : 'bg-white'}`}>
+        {chatMode === 'rooms' ? (
+          !activeRoom ? (
+            <div className="flex-1 flex items-center justify-center text-slate-400 text-sm">
+              Sélectionne un salon (ou rejoins-en un) pour démarrer.
+            </div>
+          ) : activeRoom.is_pending ? (
+            <div className="flex-1 flex items-center justify-center text-slate-400 text-sm">
+              ⏳ Demande envoyée — en attente d'approbation du créateur du salon.
+            </div>
+          ) : !activeRoom.is_member ? (
+            <div className="flex-1 flex flex-col items-center justify-center text-slate-400 text-sm gap-3">
+              <p>Rejoins <strong>{activeRoom.name}</strong> pour voir et envoyer des messages.</p>
+              <button onClick={() => handleJoinRoom(activeRoom)} className="bg-red-600 hover:bg-red-700 text-white text-sm font-bold px-4 py-2 rounded transition">
+                Rejoindre le salon
+              </button>
+            </div>
+          ) : (
+            <>
+              <div className={`px-4 sm:px-6 py-4 border-b-2 flex items-center gap-3 justify-between ${darkMode ? 'bg-[#1E40AF]' : 'bg-white'}`} style={{ borderColor: activeRoom.color || '#DC2626' }}>
+                <div className="flex items-center gap-3 min-w-0">
+                  <button type="button" onClick={() => setActiveRoom(null)} className="sm:hidden text-xl -ml-1 mr-1">←</button>
+                  <div className="w-10 h-10 rounded-full text-white flex items-center justify-center font-bold shadow-sm shrink-0" style={{ background: activeRoom.color || '#DC2626' }}>#</div>
                   <div className="min-w-0">
-                    <h3 className="font-black text-sm sm:text-base text-slate-900 leading-tight break-words">{post.title}</h3>
-                    <p className="text-[11px] sm:text-xs text-slate-500 truncate">{post.author?.full_name || 'Membre'}{post.author?.english_level && ` · ${post.author.english_level}`} · {timeAgo(post.created_at)}</p>
+                    <h3 className="font-bold text-sm truncate">{activeRoom.name}</h3>
+                    <p className="text-xs text-slate-400 truncate">{activeRoom.description || `${activeRoom.member_count} membre(s)`}</p>
                   </div>
                 </div>
-                {(isOwner || canDelete) && !isEditing && (
-                  <div className="flex gap-1 shrink-0">
-                    {isOwner && (
-                      <button onClick={() => startEditPost(post)} className="text-xs bg-slate-100 hover:bg-slate-200 px-2 py-1 rounded">✏️</button>
+                <div className="flex items-center gap-2 shrink-0">
+                  <button onClick={() => toggleMute('room', activeRoom.id)} title="Notifications" className="text-base">
+                    {isMuted('room', activeRoom.id) ? '🔕' : '🔔'}
+                  </button>
+                  {activeRoom.pending_count > 0 && (
+                    <button onClick={() => { fetchPending(activeRoom.id); setShowPendingModal(true); }} className="text-xs bg-amber-100 text-amber-700 font-bold px-2.5 py-1 rounded-full">
+                      {activeRoom.pending_count} demande(s)
+                    </button>
+                  )}
+                  <button onClick={() => handleLeaveRoom(activeRoom)} className="text-xs text-slate-400 hover:text-red-600 font-semibold">Quitter</button>
+                </div>
+              </div>
+
+              {showPendingModal && (
+                <div className="absolute inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
+                  <div className={`w-full max-w-sm rounded-2xl shadow-2xl border p-5 ${darkMode ? 'bg-[#1E40AF] border-slate-700 text-white' : 'bg-white border-slate-200'}`}>
+                    <div className="flex justify-between items-center mb-3">
+                      <h3 className="font-bold text-sm">Demandes d'adhésion</h3>
+                      <button onClick={() => setShowPendingModal(false)}>✕</button>
+                    </div>
+                    {pendingRequests.length === 0 ? (
+                      <p className="text-xs text-slate-400 italic">Aucune demande.</p>
+                    ) : (
+                      <>
+                        <button onClick={() => handleApproveAll(activeRoom.id)} className="w-full mb-3 bg-red-600 hover:bg-red-700 text-white text-xs font-bold py-2 rounded">
+                          Tout accepter ({pendingRequests.length})
+                        </button>
+                        <div className="space-y-2 max-h-64 overflow-y-auto">
+                          {pendingRequests.map(p => (
+                            <div key={p.membership_id} className="flex items-center justify-between p-2 border border-slate-100 rounded">
+                              <span className="text-sm">{p.full_name}</span>
+                              <button onClick={() => handleApprove(activeRoom.id, p.membership_id)} className="text-xs bg-emerald-600 text-white px-2 py-1 rounded font-bold">Accepter</button>
+                            </div>
+                          ))}
+                        </div>
+                      </>
                     )}
-                    {canDelete && (
-                      <button onClick={() => handleDeletePost(post)} disabled={deletingPostId === post.id} className="text-xs bg-red-50 hover:bg-red-100 text-red-600 px-2 py-1 rounded disabled:opacity-50">
-                        {deletingPostId === post.id ? '...' : '🗑️'}
-                      </button>
-                    )}
+                  </div>
+                </div>
+              )}
+
+              <div className={`flex-1 min-h-0 overflow-y-auto p-6 space-y-3 relative ${darkMode ? 'bg-[#1E3A8A]' : 'bg-[#EFF6FF]'}`}>
+                {loadingRoomHistory ? (
+                  <p className="text-center text-slate-400 text-sm">Chargement...</p>
+                ) : (roomMessagesByRoom[activeRoom.id] || []).length === 0 ? (
+                  <p className="text-center text-slate-400 text-sm italic">Aucun message dans ce salon pour le moment.</p>
+                ) : (
+                  (roomMessagesByRoom[activeRoom.id] || []).map(msg => {
+                    const isMe = msg.sender?.id === currentUser?.id || msg.sender_id === currentUser?.id;
+                    const senderName = msg.sender?.full_name || 'Membre';
+                    return (
+                      <div key={msg.id} className={`flex flex-col group relative ${isMe ? 'items-end' : 'items-start'}`}>
+                        {!isMe && <span className="text-[10px] text-slate-400 ml-2 mb-0.5">{senderName}</span>}
+                        <div
+                          className={`relative max-w-[70%] rounded-2xl px-4 py-3 shadow-xs ${isMe ? 'bg-gradient-to-br from-red-600 to-rose-700 text-white rounded-br-none' : (darkMode ? 'bg-[#1D4ED8] text-white border border-slate-700 rounded-bl-none' : 'bg-white text-slate-900 border border-slate-200/80 rounded-bl-none')}`}
+                          onTouchStart={() => startLongPress(msg)}
+                          onTouchEnd={cancelLongPress}
+                          onTouchMove={cancelLongPress}
+                        >
+                          <ReplyQuote reply={msg.reply_to} isMe={isMe} />
+                          {isEmojiOnly(msg.content) ? (
+                            <p className="text-5xl leading-tight">{msg.content}</p>
+                          ) : (
+                            <p className="text-sm leading-relaxed whitespace-pre-wrap notranslate" translate="no">{msg.content}</p>
+                          )}
+                          <p className={`text-[10px] mt-1 ${isMe ? 'text-red-100' : 'text-slate-400'}`}>{formatTime(msg.created_at)}</p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setReplyingTo(msg)}
+                          title="Répondre"
+                          className={`absolute top-0 opacity-0 group-hover:opacity-100 transition text-xs p-1 rounded bg-black/10 hover:bg-black/20 ${isMe ? 'left-[-28px]' : 'right-[-28px]'}`}
+                        >
+                          ↩️
+                        </button>
+                      </div>
+                    );
+                  })
+                )}
+                <div ref={messagesEndRef} />
+              </div>
+
+              <ReplyBanner target={replyingTo} />
+
+              <form onSubmit={handleSendMessage} className={`p-2 sm:p-4 border-t flex items-center gap-1 sm:gap-2 relative ${darkMode ? 'border-slate-800 bg-[#1E40AF]' : 'border-[#DBEAFE] bg-white'}`}>
+                {showStickerPicker && (
+                  <div ref={stickerPickerRef} className={`absolute bottom-20 left-2 sm:left-4 p-3 rounded-2xl shadow-2xl border grid grid-cols-4 gap-2 z-50 w-64 ${darkMode ? 'bg-[#1D4ED8] border-slate-700' : 'bg-white border-slate-200'}`}>
+                    {stickerList.map((emoji, i) => (
+                      <button key={i} type="button" onClick={() => handleSendSticker(emoji)} className="text-3xl p-2 rounded-xl hover:bg-red-500/15 transition">{emoji}</button>
+                    ))}
                   </div>
                 )}
+                <button type="button" onClick={() => setShowStickerPicker(!showStickerPicker)} className="p-1.5 sm:p-2 rounded-xl text-base sm:text-lg hover:bg-slate-100/10 transition shrink-0">😊</button>
+                <input
+                  type="text" value={inputText} onChange={(e) => setInputText(e.target.value)}
+                  onFocus={scrollToBottomSoon}
+                  placeholder={`Écrire dans #${activeRoom.name}...`}
+                  className={`flex-1 min-w-0 px-3 sm:px-4 py-2 sm:py-2.5 border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-red-500 ${darkMode ? 'bg-[#1D4ED8] border-slate-700 text-white' : 'bg-[#EFF6FF] border-slate-200'}`}
+                />
+                <button type="submit" disabled={!inputText.trim()} className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-red-600 hover:bg-red-700 text-white flex items-center justify-center shadow transition shrink-0 disabled:opacity-40">➔</button>
+              </form>
+            </>
+          )
+        ) : !activeContact ? (
+          <div className="flex-1 flex items-center justify-center text-slate-400 text-sm">
+            Sélectionne un membre pour démarrer une conversation.
+          </div>
+        ) : (
+          <>
+            <div className={`px-4 sm:px-6 py-4 border-b-2 border-red-600 flex items-center gap-3 justify-between ${darkMode ? 'bg-[#1E40AF]' : 'bg-white'}`}>
+              <div className="flex items-center gap-3 min-w-0">
+                <button type="button" onClick={() => setActiveContact(null)} className="sm:hidden text-xl -ml-1 mr-1">←</button>
+                <Avatar name={activeContact.full_name} imageUrl={activeContact.profile_image} className="w-10 h-10 text-sm" />
+                <div className="min-w-0">
+                  <h3 className="font-bold text-sm truncate">{activeContact.full_name}</h3>
+                  <p className="text-xs text-slate-400 truncate">{activeContact.english_level}</p>
+                </div>
               </div>
+              <button onClick={() => toggleMute('contact', activeContact.id)} title="Notifications" className="text-lg shrink-0">
+                {isMuted('contact', activeContact.id) ? '🔕' : '🔔'}
+              </button>
+            </div>
 
-              {isEditing ? (
-                <div className="space-y-2 mb-3">
-                  <input type="text" value={editTitle} onChange={(e) => setEditTitle(e.target.value)}
-                    className="w-full p-2 border border-slate-200 rounded text-sm font-bold" required />
-                  <textarea value={editContent} onChange={(e) => setEditContent(e.target.value)}
-                    className="w-full p-2 border border-slate-200 rounded text-sm h-24 resize-none" required />
-                  <div className="flex gap-2">
-                    <button onClick={() => handleUpdatePost(post)} disabled={savingEdit}
-                      className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-3 py-1.5 rounded transition disabled:opacity-50">
-                      {savingEdit ? '...' : 'Enregistrer'}
-                    </button>
-                    <button onClick={cancelEditPost} className="text-xs text-slate-500 px-3 py-1.5">Annuler</button>
+            <div className={`flex-1 min-h-0 overflow-y-auto p-6 space-y-4 relative ${darkMode ? 'bg-[#1E3A8A]' : 'bg-[#EFF6FF]'}`}>
+              <div className="absolute inset-0 pointer-events-none" style={{
+                opacity: darkMode ? 0.05 : 0.045,
+                backgroundImage: `repeating-linear-gradient(45deg, #DC2626 0, #DC2626 1.5px, transparent 1.5px, transparent 26px), repeating-linear-gradient(-45deg, #1E40AF 0, #1E40AF 1.5px, transparent 1.5px, transparent 26px)`
+              }} />
+
+              {loadingHistory ? (
+                <p className="text-center text-slate-400 text-sm relative z-10">Chargement de la conversation...</p>
+              ) : currentMessages.length === 0 ? (
+                <p className="text-center text-slate-400 text-sm italic relative z-10">Aucun message avec {activeContact.full_name}. Dis bonjour !</p>
+              ) : (
+                currentMessages.map(msg => {
+                  const isMe = msg.sender_id === currentUser?.id;
+                  const isTranslating = !!translatingIds[msg.id];
+                  const isTranslationVisible = !!translationsVisible[msg.id];
+                  return (
+                    <div key={msg.id} className={`flex flex-col group relative ${isMe ? 'items-end' : 'items-start'} ${selectedMsgForMenu === msg.id ? 'z-50' : (translationsVisible[msg.id] !== undefined ? 'z-20' : 'z-10')}`}>
+                      <div
+                        className={`relative max-w-[70%] rounded-2xl px-4 py-3 shadow-xs ${isMe ? 'bg-gradient-to-br from-red-600 to-rose-700 text-white rounded-br-none' : (darkMode ? 'bg-[#1D4ED8] text-white border border-slate-700 rounded-bl-none' : 'bg-white text-slate-900 border border-slate-200/80 rounded-bl-none')}`}
+                        onTouchStart={() => startLongPress(msg)}
+                        onTouchEnd={cancelLongPress}
+                        onTouchMove={cancelLongPress}
+                      >
+                        <ReplyQuote reply={msg.reply_to} isMe={isMe} />
+
+                        {msg.media_url && (
+                          msg.media_url.match(/\.(jpeg|jpg|gif|png|webp)$/i) ? (
+                            <img src={msg.media_url} alt={msg.content} className="rounded-lg mb-2 max-h-56 w-full object-cover" />
+                          ) : (
+                            <a href={msg.media_url} download className={`flex items-center gap-2 p-2 rounded-lg mb-2 text-xs font-medium ${isMe ? 'bg-white/10' : 'bg-black/5'}`}>
+                              📎 <span className="truncate">{msg.content || 'Fichier'}</span>
+                            </a>
+                          )
+                        )}
+                        {msg.content && !(msg.media_url && msg.content === msg.content && msg.media_url.includes(msg.content)) && (
+                          isEmojiOnly(msg.content) ? (
+                            <p className="text-5xl leading-tight">{msg.content}</p>
+                          ) : (
+                            <p className="text-sm leading-relaxed whitespace-pre-wrap notranslate" translate="no">{msg.content}</p>
+                          )
+                        )}
+
+                        {isTranslating && <p className="text-[10px] italic opacity-70 mt-1">Traduction en cours...</p>}
+                        {!isTranslating && isTranslationVisible && traductions[msg.id] && (
+                          <div className={`mt-2 p-2 rounded-xl text-xs border ${isMe ? 'bg-black/20 border-white/30' : (darkMode ? 'bg-[#1E40AF] border-slate-700' : 'bg-slate-100 border-slate-200')}`}>
+                            <p className="italic">{traductions[msg.id]}</p>
+                          </div>
+                        )}
+
+                        {msg.reactions && Object.keys(JSON.parse(msg.reactions)).length > 0 && (
+                          <div className="flex gap-1 mt-1">
+                            {Object.entries(JSON.parse(msg.reactions)).map(([emo, cnt]) => (
+                              <span key={emo} className={`text-[10px] px-1.5 py-0.5 rounded-full ${isMe ? 'bg-black/20' : 'bg-slate-100'}`}>{emo} {cnt}</span>
+                            ))}
+                          </div>
+                        )}
+
+                        <div className={`flex items-center justify-between mt-2 pt-1 border-t text-[11px] gap-4 ${isMe ? 'border-white/20 text-red-100' : 'border-slate-700/20 text-slate-400'}`}>
+                          <span>{formatTime(msg.created_at)}</span>
+                          <div className="flex items-center gap-2">
+                            <button type="button" onClick={() => setReplyingTo(msg)} className="hover:scale-125 transition" title="Répondre">↩️</button>
+                            <button type="button" onClick={() => handleReact(msg, '❤️')} className="hover:scale-125 transition">❤️</button>
+                            <button type="button" onClick={() => handleReact(msg, '👍')} className="hover:scale-125 transition">👍</button>
+                            <button type="button" onClick={() => basculerTraduction(msg)} disabled={isTranslating} className="hover:underline font-semibold disabled:opacity-50">🌐</button>
+                          </div>
+                        </div>
+
+                        {isMe && (
+                          <button
+                            onClick={(e) => { e.stopPropagation(); setSelectedMsgForMenu(selectedMsgForMenu === msg.id ? null : msg.id); }}
+                            className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 transition p-1 text-xs bg-black/20 rounded text-white"
+                          >
+                            ▼
+                          </button>
+                        )}
+
+                        {selectedMsgForMenu === msg.id && (
+                          <div ref={menuRef} className={`absolute right-0 top-8 z-50 w-40 rounded-lg shadow-xl border py-1 text-xs ${darkMode ? 'bg-[#1D4ED8] border-slate-700 text-white' : 'bg-white border-slate-200 text-slate-800'}`}>
+                            <button onClick={() => { setForwardModalMsg(msg); setSelectedMsgForMenu(null); }} className="w-full text-left px-4 py-2 hover:bg-red-500/10 flex items-center gap-2">
+                              <span>➔</span> Transférer
+                            </button>
+                            {!msg.media_url && (
+                              <button onClick={() => handleEditMessage(msg)} className="w-full text-left px-4 py-2 hover:bg-red-500/10 flex items-center gap-2">
+                                <span>✏️</span> Modifier
+                              </button>
+                            )}
+                            <button onClick={() => handleDeleteMessage(msg)} className="w-full text-left px-4 py-2 hover:bg-red-500/10 text-red-500 flex items-center gap-2">
+                              <span>🗑️</span> Supprimer
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                      {!isMe && (
+                        <button
+                          type="button"
+                          onClick={() => setReplyingTo(msg)}
+                          title="Répondre"
+                          className="absolute top-0 right-[-28px] opacity-0 group-hover:opacity-100 transition text-xs p-1 rounded bg-black/10 hover:bg-black/20"
+                        >
+                          ↩️
+                        </button>
+                      )}
+                    </div>
+                  );
+                })
+              )}
+              <div ref={messagesEndRef} />
+            </div>
+
+            <input type="file" ref={fileInputRef} className="hidden" accept="image/*,video/*" onChange={handleFileUpload} />
+            <input type="file" ref={docInputRef} className="hidden" accept=".pdf,.doc,.docx,.txt" onChange={handleFileUpload} />
+
+            {suggestions.length > 0 && (
+              <div className={`px-4 py-2 border-t flex items-center gap-2 overflow-x-auto ${darkMode ? 'bg-[#1E40AF] border-slate-800' : 'bg-white border-slate-200'}`}>
+                <span className="text-[10px] text-slate-400 shrink-0">{dictLang === 'fr' ? '🇫🇷' : '🇬🇧'}</span>
+                {suggestions.map(word => (
+                  <button key={word} type="button" onClick={() => applySuggestion(word)} className={`text-xs px-3 py-1 rounded-full border shrink-0 transition ${darkMode ? 'border-slate-700 text-slate-200 hover:bg-red-500/15' : 'border-slate-200 text-slate-700 hover:bg-red-50'}`}>
+                    {word}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {forwardModalMsg && (
+              <div className="absolute inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
+                <div className={`w-full max-w-sm rounded-2xl shadow-2xl border overflow-hidden flex flex-col max-h-[420px] ${darkMode ? 'bg-[#1E40AF] border-slate-700 text-white' : 'bg-white border-slate-200'}`}>
+                  <div className="p-4 border-b border-slate-700/20 flex items-center justify-between">
+                    <h3 className="font-bold text-sm">Transférer à...</h3>
+                    <button onClick={() => setForwardModalMsg(null)} className="text-lg">✕</button>
+                  </div>
+                  <div className="p-3 border-b border-slate-700/20">
+                    <input type="text" value={forwardSearch} onChange={(e) => setForwardSearch(e.target.value)} placeholder="Rechercher un membre..."
+                      className={`w-full px-3 py-1.5 border rounded-lg text-xs focus:outline-none ${darkMode ? 'bg-[#1D4ED8] border-slate-700 text-white' : 'bg-slate-100 border-slate-200'}`} />
+                  </div>
+                  <div className="flex-1 overflow-y-auto p-2 space-y-1">
+                    {otherMembers.filter(m => m.full_name.toLowerCase().includes(forwardSearch.toLowerCase())).map(member => (
+                      <div key={member.id} onClick={() => executeForward(member)} className="flex items-center gap-3 p-2.5 rounded-xl cursor-pointer hover:bg-red-500/10 transition">
+                        <Avatar name={member.full_name} imageUrl={member.profile_image} className="w-9 h-9 text-xs" />
+                        <span className="text-sm font-medium">{member.full_name}</span>
+                      </div>
+                    ))}
                   </div>
                 </div>
-              ) : (
-                <p className="text-slate-700 text-sm whitespace-pre-wrap leading-relaxed mb-2 notranslate" translate="no">{displayed}</p>
-              )}
+              </div>
+            )}
 
-              {post.image_url && !isEditing && (
-                <div className="mb-3">
-                  {post.image_url.match(/\.(jpeg|jpg|gif|png|webp)$/i) && <img src={post.image_url} alt="" className="rounded-lg max-h-72 object-cover w-full border border-slate-200" />}
-                  {post.image_url.match(/\.(mp3|wav|ogg|m4a)$/i) && <audio controls className="w-full mt-2"><source src={post.image_url} /></audio>}
-                  {post.image_url.match(/\.(mp4|webm)$/i) && <video controls className="rounded-lg max-h-72 w-full mt-2 border border-slate-200"><source src={post.image_url} /></video>}
+            {editingMessageId && (
+              <div className={`px-4 py-2 border-t flex items-center justify-between text-xs ${darkMode ? 'bg-[#1E40AF] border-slate-800' : 'bg-slate-100 border-slate-200'}`}>
+                <span className="font-bold text-red-500">✏️ Modification du message...</span>
+                <button onClick={() => { setEditingMessageId(null); setInputText(''); }} className="font-bold hover:opacity-75">✕</button>
+              </div>
+            )}
+
+            {!editingMessageId && <ReplyBanner target={replyingTo} />}
+
+            <form onSubmit={handleSendMessage} className={`p-2 sm:p-4 border-t flex items-center gap-1 sm:gap-2 relative ${darkMode ? 'border-slate-800 bg-[#1E40AF]' : 'border-[#DBEAFE] bg-white'}`}>
+              {showStickerPicker && (
+                <div ref={stickerPickerRef} className={`absolute bottom-20 left-2 sm:left-4 p-3 rounded-2xl shadow-2xl border grid grid-cols-4 gap-2 z-50 w-64 ${darkMode ? 'bg-[#1D4ED8] border-slate-700' : 'bg-white border-slate-200'}`}>
+                  {stickerList.map((emoji, i) => (
+                    <button key={i} type="button" onClick={() => handleSendSticker(emoji)} className="text-3xl p-2 rounded-xl hover:bg-red-500/15 transition">{emoji}</button>
+                  ))}
+                </div>
+              )}
+              {showAttachMenu && (
+                <div ref={attachMenuRef} className={`absolute bottom-20 left-10 sm:left-12 z-50 rounded-2xl shadow-xl border py-3 px-2 flex flex-col gap-2 min-w-[180px] ${darkMode ? 'bg-[#1D4ED8] border-slate-700' : 'bg-white border-slate-200'}`}>
+                  <button type="button" onClick={() => fileInputRef.current.click()} className="flex items-center gap-3 px-4 py-2 text-xs rounded-xl hover:bg-red-500/10 font-medium">📷 Photo/Vidéo</button>
+                  <button type="button" onClick={() => docInputRef.current.click()} className="flex items-center gap-3 px-4 py-2 text-xs rounded-xl hover:bg-red-500/10 font-medium">📄 Document</button>
+
+                  {/* Langue + correction : regroupées ici sur mobile pour libérer la barre de saisie */}
+                  <div className="sm:hidden border-t border-slate-700/20 pt-2 mt-1 flex items-center justify-between px-2">
+                    <div className="flex items-center rounded-lg overflow-hidden border text-xs font-semibold">
+                      <button type="button" onClick={() => setDictLang('fr')} className={`px-2 py-1 ${dictLang === 'fr' ? 'bg-red-600 text-white' : 'text-slate-500'}`}>🇫🇷</button>
+                      <button type="button" onClick={() => setDictLang('en')} className={`px-2 py-1 ${dictLang === 'en' ? 'bg-red-600 text-white' : 'text-slate-500'}`}>🇬🇧</button>
+                    </div>
+                    <button type="button" onClick={() => { correctText(); setShowAttachMenu(false); }} disabled={isCorrecting} className="text-lg px-2 disabled:opacity-50">
+                      {isCorrecting ? '⏳' : '✨'}
+                    </button>
+                  </div>
                 </div>
               )}
 
-              <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 border-t border-slate-100 pt-2 mb-2 text-xs">
-                <button onClick={() => handleTranslate(post.id, post.content)} disabled={isTranslating} className="text-red-600 font-semibold disabled:opacity-50">
-                  🌐 {isTranslating ? "..." : (trans?.isTranslated ? "Voir l'original" : label)}
+              <div className="flex items-center gap-0.5 sm:gap-1 shrink-0">
+                <button type="button" onClick={() => setShowStickerPicker(!showStickerPicker)} className="p-1.5 sm:p-2 rounded-xl text-base sm:text-lg hover:bg-slate-100/10 transition">😊</button>
+                <button type="button" onClick={() => setShowAttachMenu(!showAttachMenu)} disabled={uploadingFile} className="p-1.5 sm:p-2 rounded-xl text-base sm:text-lg hover:bg-slate-100/10 transition disabled:opacity-50">
+                  {uploadingFile ? '⏳' : '📎'}
                 </button>
-                <div className="flex items-center gap-3 text-slate-500">
-                  {post.likes_count > 0 && <span>❤️ {post.likes_count}</span>}
-                  {comments.length > 0 && <button onClick={() => setExpandedComments(p => { const n=new Set(p); n.has(post.id)?n.delete(post.id):n.add(post.id); return n; })} className="hover:underline">{comments.length} commentaire(s)</button>}
+
+                {/* Langue + correction : visibles en ligne seulement à partir de sm (tablette/desktop) */}
+                <div className={`hidden sm:flex items-center rounded-lg overflow-hidden border text-xs font-semibold ${darkMode ? 'border-slate-700' : 'border-slate-200'}`}>
+                  <button type="button" onClick={() => setDictLang('fr')} className={`px-2 py-1 ${dictLang === 'fr' ? 'bg-red-600 text-white' : 'text-slate-500'}`}>🇫🇷</button>
+                  <button type="button" onClick={() => setDictLang('en')} className={`px-2 py-1 ${dictLang === 'en' ? 'bg-red-600 text-white' : 'text-slate-500'}`}>🇬🇧</button>
                 </div>
-              </div>
-
-              <div className="flex border-t border-b border-slate-100 py-1 mb-2">
-                <button onClick={() => handleLike(post.id)} disabled={likingId === post.id} className={`flex-1 text-xs font-bold py-1.5 rounded hover:bg-slate-50 ${isLiked ? 'text-red-600' : 'text-slate-500'}`}>
-                  {isLiked ? '❤️ Aimé' : '🤍 J\'aime'}
+                <button type="button" onClick={correctText} disabled={isCorrecting} className="hidden sm:inline-flex p-2 rounded-xl text-lg hover:bg-slate-100/10 transition disabled:opacity-50">
+                  {isCorrecting ? '⏳' : '✨'}
                 </button>
               </div>
 
-              {comments.length > 2 && !expanded && (
-                <button onClick={() => setExpandedComments(p => new Set(p).add(post.id))} className="text-xs text-slate-400 hover:underline mb-2 block">
-                  Voir les {comments.length - 2} autres commentaires
-                </button>
-              )}
-              {visibleComments.map(c => <CommentItem key={c.id} c={c} onLike={likeComment} />)}
+              <input
+                type="text" value={inputText} onChange={(e) => setInputText(e.target.value)}
+                onFocus={scrollToBottomSoon}
+                placeholder="Écrivez votre message..."
+                className={`flex-1 min-w-0 px-3 sm:px-4 py-2 sm:py-2.5 border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-red-500 ${darkMode ? 'bg-[#1D4ED8] border-slate-700 text-white' : 'bg-[#EFF6FF] border-slate-200'}`}
+              />
 
-              {isAuthenticated ? (
-                <form onSubmit={(e) => handleAddComment(post.id, e)} className="flex gap-2 mt-2 items-center">
-                  <div className="w-7 h-7 shrink-0 rounded-full bg-slate-200"></div>
-                  <input type="text" placeholder="Écrire un commentaire..." value={commentInputs[post.id] || ''} onChange={(e)=>setCommentInputs({...commentInputs,[post.id]:e.target.value})} className="flex-1 min-w-0 p-1.5 text-xs border border-slate-200 rounded-full bg-slate-50 focus:outline-none" />
-                  <button type="submit" disabled={submittingCommentId === post.id} className="shrink-0 text-red-600 text-xs font-bold px-2">{submittingCommentId === post.id ? '...' : 'Envoyer'}</button>
-                </form>
-              ) : (
-                <button onClick={onRequestLogin} className="text-xs text-red-600 hover:underline">🔒 Connecte-toi pour commenter</button>
-              )}
-            </div>
-          );
-        })}
+              <button type="submit" disabled={!inputText.trim()} className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-red-600 hover:bg-red-700 text-white flex items-center justify-center shadow transition shrink-0 disabled:opacity-40">
+                ➔
+              </button>
+            </form>
+          </>
+        )}
       </div>
     </div>
   );
