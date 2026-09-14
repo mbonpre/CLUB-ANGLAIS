@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 from typing import List
 from app.database import get_db
 from app.models.user import User, UserRole
-from app.schemas.user import UserResponse, ProfileUpdate
+from app.schemas.user import UserResponse, ProfileUpdate, ProfileImageUpdate
 from app.services.auth_utils import get_current_user
 
 router = APIRouter(prefix="/users", tags=["Gestion du Profil & Annuaire"])
@@ -14,8 +14,8 @@ def read_user_me(current_user: User = Depends(get_current_user)):
 
 @router.put("/me", response_model=UserResponse)
 def update_user_me(
-    profile_data: ProfileUpdate, 
-    db: Session = Depends(get_db), 
+    profile_data: ProfileUpdate,
+    db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     if profile_data.bio is not None:
@@ -26,22 +26,33 @@ def update_user_me(
     db.refresh(current_user)
     return current_user
 
+@router.patch("/me/profile-image", response_model=UserResponse)
+def update_profile_image(
+    data: ProfileImageUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    current_user.profile_image = data.profile_image
+    db.commit()
+    db.refresh(current_user)
+    return current_user
+
 @router.put("/{user_id}/promote")
 def promote_user(
-    user_id: int, 
-    new_role: str, # Le rôle envoyé dans la requête (ex: "COACH", "COMMUNITY_MANAGER", "ADMIN")
+    user_id: int,
+    new_role: str,  # Le rôle envoyé dans la requête (ex: "COACH", "COMMUNITY_MANAGER", "ADMIN")
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     # Vérification manuelle de la règle métier
     if current_user.role == UserRole.COMMUNITY_MANAGER and new_role in [UserRole.ADMIN, UserRole.COACH]:
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, 
+            status_code=status.HTTP_403_FORBIDDEN,
             detail="Un Community Manager ne peut pas nommer un Admin ou un Coach."
         )
     if current_user.role not in [UserRole.ADMIN, UserRole.COMMUNITY_MANAGER]:
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, 
+            status_code=status.HTTP_403_FORBIDDEN,
             detail="Accès refusé."
         )
 
@@ -59,7 +70,7 @@ def promote_user(
     db.refresh(user_to_update)
 
     return {
-        "message": f"Utilisateur {user_to_update.full_name} promu avec succès au rang de {user_to_update.role}", 
+        "message": f"Utilisateur {user_to_update.full_name} promu avec succès au rang de {user_to_update.role}",
         "user": user_to_update
     }
 
@@ -71,15 +82,15 @@ def get_all_users(db: Session = Depends(get_db)):
 # Nouvelle route : Modifier le niveau d'anglais d'un membre (Réservé Admin & Coach)
 @router.put("/{user_id}/level")
 def update_user_level(
-    user_id: int, 
-    new_level: str, # Ex: "A1", "A2", "B1", "B2", "C1", "C2"
+    user_id: int,
+    new_level: str,  # Ex: "A1", "A2", "B1", "B2", "C1", "C2"
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     # Seul l'Admin ou un Coach peut modifier le niveau d'un utilisateur
     if current_user.role not in [UserRole.ADMIN, UserRole.COACH]:
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, 
+            status_code=status.HTTP_403_FORBIDDEN,
             detail="Seuls les administrateurs et les coachs peuvent attribuer un niveau."
         )
 

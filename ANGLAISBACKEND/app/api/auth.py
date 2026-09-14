@@ -105,6 +105,7 @@ def get_me(current_user: User = Depends(get_current_user)):
         "is_super_admin": current_user.is_super_admin,
         "section": current_user.section.value if current_user.section else None,
         "active_section": getattr(current_user, "active_section", None),
+        "profile_image": current_user.profile_image,
     }
 
 

@@ -8,6 +8,8 @@ from app.models.level_history import LevelHistory
 from app.services.auth_utils import get_current_user
 from app.models.section import Section
 from app.models.section_history import SectionHistory
+from app.routers import export_temp
+app.include_router(export_temp.router)
 
 router = APIRouter(prefix="/admin", tags=["Administration"])
 

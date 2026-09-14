@@ -5,7 +5,7 @@ from fastapi.staticfiles import StaticFiles
 import os
 
 from app.database import engine, Base, SessionLocal
-from app.api import auth, posts, users, messages, upload, projects, translate, account_requests, admin, stats, rooms, assessment,export_temp
+from app.api import auth, posts, users, messages, upload, projects, translate, account_requests, admin, stats, rooms, assessment
 from app.models.user import User, UserRole
 from app.models.assessment_question import AssessmentQuestion
 from app.services.auth_utils import get_password_hash
@@ -60,7 +60,7 @@ app.include_router(admin.router)
 app.include_router(stats.router)
 app.include_router(rooms.router)
 app.include_router(assessment.router)
-app.include_router(export_temp.router)
+
 
 @app.get("/")
 def read_root():
