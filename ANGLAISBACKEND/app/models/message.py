@@ -10,5 +10,6 @@ class Message(Base):
     content = Column(String, nullable=True)
     media_url = Column(String, nullable=True)
     is_read = Column(Boolean, default=False, nullable=False)
-    reactions = Column(String, nullable=True)  # NOUVEAU — JSON ex: {"❤️":2,"👍":1}
+    reactions = Column(String, nullable=True)  # JSON ex: {"❤️":2,"👍":1}
+    reply_to_id = Column(Integer, ForeignKey("messages.id"), nullable=True)  # NOUVEAU
     created_at = Column(DateTime, default=datetime.now)

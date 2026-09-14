@@ -75,11 +75,20 @@ def _call_mymemory(text: str, target: str) -> str:
     return translated
 
 
+@router.get("")
 @router.get("/")
 def translate_text(
     text: str = Query(..., min_length=1, max_length=1000),
-    target: str = Query(..., pattern="^(en|fr)$"),
+    target: str = Query(...),
 ):
+    # Validation manuelle plutôt que Query(..., pattern=...) : le paramètre
+    # "pattern" n'existe pas sur toutes les versions de FastAPI/Pydantic
+    # (avant, c'était "regex") et peut faire planter l'import du routeur au
+    # démarrage, ce qui expliquerait que /translate ne réponde jamais.
+    target = (target or "").strip().lower()
+    if target not in ("en", "fr"):
+        raise HTTPException(status_code=422, detail="Le paramètre 'target' doit être 'en' ou 'fr'.")
+
     cache_key = (text, target)
     if cache_key in _translation_cache:
         return {"translatedText": _translation_cache[cache_key], "provider": "cache"}
