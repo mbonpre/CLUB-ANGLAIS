@@ -44,6 +44,18 @@ const getInitials = (name) => {
   return parts.length >= 2 ? (parts[0][0] + parts[1][0]).toUpperCase() : parts[0].slice(0, 2).toUpperCase();
 };
 
+// "default.png" est la valeur par défaut en base : on la traite comme "pas de photo"
+const hasCustomAvatar = (url) => !!url && url !== 'default.png';
+
+// Rendu d'un avatar : vraie photo si dispo, sinon initiales sur fond dégradé (comportement inchangé)
+const Avatar = ({ name, imageUrl, className = '' }) => (
+  <div className={`rounded-full bg-gradient-to-br from-red-500 to-rose-700 text-white flex items-center justify-center font-bold shadow-sm overflow-hidden shrink-0 ${className}`}>
+    {hasCustomAvatar(imageUrl)
+      ? <img src={imageUrl} alt={name} className="w-full h-full object-cover" />
+      : getInitials(name)}
+  </div>
+);
+
 const formatTime = (iso) => {
   try {
     return new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -566,9 +578,7 @@ export default function ChatClubAnglais() {
                     activeContact?.id === member.id ? (darkMode ? 'bg-[#2563EB]' : 'bg-red-50/70') : (darkMode ? 'hover:bg-[#1E3A8A]' : 'hover:bg-white')
                   }`}
                 >
-                  <div className="w-11 h-11 rounded-full bg-gradient-to-br from-red-500 to-rose-700 text-white flex items-center justify-center font-bold shrink-0 text-sm shadow-sm">
-                    {getInitials(member.full_name)}
-                  </div>
+                  <Avatar name={member.full_name} imageUrl={member.profile_image} className="w-11 h-11 text-sm" />
                   <div className="flex-1 min-w-0">
                     <div className="flex justify-between items-baseline">
                       <h4 className="text-sm font-semibold truncate">{member.full_name}</h4>
@@ -749,9 +759,7 @@ export default function ChatClubAnglais() {
           <>
             <div className={`px-4 sm:px-6 py-4 border-b-2 border-red-600 flex items-center gap-3 ${darkMode ? 'bg-[#1E40AF]' : 'bg-white'}`}>
               <button type="button" onClick={() => setActiveContact(null)} className="sm:hidden text-xl -ml-1 mr-1">←</button>
-              <div className="w-10 h-10 rounded-full bg-gradient-to-br from-red-500 to-rose-700 text-white flex items-center justify-center font-bold shadow-sm">
-                {getInitials(activeContact.full_name)}
-              </div>
+              <Avatar name={activeContact.full_name} imageUrl={activeContact.profile_image} className="w-10 h-10 text-sm" />
               <div>
                 <h3 className="font-bold text-sm">{activeContact.full_name}</h3>
                 <p className="text-xs text-slate-400">{activeContact.english_level}</p>
@@ -873,9 +881,7 @@ export default function ChatClubAnglais() {
                   <div className="flex-1 overflow-y-auto p-2 space-y-1">
                     {otherMembers.filter(m => m.full_name.toLowerCase().includes(forwardSearch.toLowerCase())).map(member => (
                       <div key={member.id} onClick={() => executeForward(member)} className="flex items-center gap-3 p-2.5 rounded-xl cursor-pointer hover:bg-red-500/10 transition">
-                        <div className="w-9 h-9 rounded-full bg-gradient-to-br from-red-500 to-rose-700 text-white flex items-center justify-center font-bold text-xs">
-                          {getInitials(member.full_name)}
-                        </div>
+                        <Avatar name={member.full_name} imageUrl={member.profile_image} className="w-9 h-9 text-xs" />
                         <span className="text-sm font-medium">{member.full_name}</span>
                       </div>
                     ))}

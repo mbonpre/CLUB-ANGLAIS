@@ -1,6 +1,14 @@
 import { useState, useEffect } from 'react';
 import { API_BASE_URL } from '../config';
 
+const hasCustomAvatar = (url) => !!url && url !== 'default.png';
+
+const getInitials = (name) => {
+  if (!name) return '?';
+  const parts = name.trim().split(/\s+/);
+  return parts.length >= 2 ? (parts[0][0] + parts[1][0]).toUpperCase() : parts[0].slice(0, 2).toUpperCase();
+};
+
 export default function Members() {
   const [search, setSearch] = useState('');
   const [levelFilter, setLevelFilter] = useState('');
@@ -75,11 +83,20 @@ export default function Members() {
           filteredMembers.map(member => (
             <div key={member.id} className="bg-white p-4 sm:p-5 rounded-lg shadow-sm border border-slate-200 flex flex-col justify-between">
               <div>
-                <div className="flex justify-between items-start gap-2 mb-3">
-                  <h3 className="font-bold text-slate-900 min-w-0 break-words">{member.full_name || "Utilisateur"}</h3>
-                  <span className="shrink-0 text-xs font-semibold px-2.5 py-1 rounded-full bg-red-50 text-red-700 border border-red-100">{member.english_level || 'A1'}</span>
+                <div className="flex items-start gap-3 mb-3">
+                  <div className="w-11 h-11 shrink-0 rounded-full bg-gradient-to-br from-red-500 to-rose-700 text-white flex items-center justify-center font-bold text-sm overflow-hidden">
+                    {hasCustomAvatar(member.profile_image)
+                      ? <img src={member.profile_image} alt={member.full_name} className="w-full h-full object-cover" />
+                      : getInitials(member.full_name)}
+                  </div>
+                  <div className="flex-1 min-w-0 flex justify-between items-start gap-2">
+                    <div className="min-w-0">
+                      <h3 className="font-bold text-slate-900 break-words leading-tight">{member.full_name || "Utilisateur"}</h3>
+                      <p className="text-xs text-slate-500 break-words">{member.email}</p>
+                    </div>
+                    <span className="shrink-0 text-xs font-semibold px-2.5 py-1 rounded-full bg-red-50 text-red-700 border border-red-100">{member.english_level || 'A1'}</span>
+                  </div>
                 </div>
-                <p className="text-xs text-slate-500 mb-4 break-words">{member.email}</p>
               </div>
 
               {isStaff && (

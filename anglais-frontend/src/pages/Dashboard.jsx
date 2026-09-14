@@ -38,18 +38,22 @@ const getWordOfTheDay = () => {
   return WORD_OF_THE_DAY[dayOfYear % WORD_OF_THE_DAY.length];
 };
 
+// "default.png" est la valeur par défaut en base : on la traite comme "pas de photo"
+const hasCustomAvatar = (url) => !!url && url !== 'default.png';
+
 export default function Dashboard({ isAuthenticated, onLoginSuccess, onLogout }) {
   const [currentPage, setCurrentPage] = useState('home');
   const [activeTab, setActiveTab] = useState('official');
   const [currentUser, setCurrentUser] = useState(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [uploadingPic, setUploadingPic] = useState(false);
   const isStaff = currentUser && ['ADMIN', 'COMMUNITY_MANAGER'].includes(currentUser.role);
+
+  const authHeaders = () => ({ 'Authorization': `Bearer ${localStorage.getItem('token')}` });
 
   const fetchCurrentUser = () => {
     if (!isAuthenticated) { setCurrentUser(null); return; }
-    fetch(   `${API_BASE_URL}/auth/me`, {
-      headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` },
-    })
+    fetch(   `${API_BASE_URL}/auth/me`, { headers: authHeaders() })
       .then((res) => {
         if (res.status === 403) {
           alert("Ton compte a été suspendu par un administrateur.");
@@ -67,17 +71,30 @@ export default function Dashboard({ isAuthenticated, onLoginSuccess, onLogout })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAuthenticated]);
 
-  const [profilePic, setProfilePic] = useState(() => localStorage.getItem('user_profile_pic') || null);
-
-  const handleImageChange = (e) => {
+  const handleImageChange = async (e) => {
     const file = e.target.files[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setProfilePic(reader.result);
-        localStorage.setItem('user_profile_pic', reader.result);
-      };
-      reader.readAsDataURL(file);
+    if (!file) return;
+    setUploadingPic(true);
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      const uploadRes = await fetch(`${API_BASE_URL}/upload/`, { method: 'POST', body: formData });
+      if (!uploadRes.ok) throw new Error("Échec de l'envoi de l'image.");
+      const uploadData = await uploadRes.json();
+
+      const saveRes = await fetch(`${API_BASE_URL}/users/me/profile-image`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify({ profile_image: uploadData.url }),
+      });
+      if (!saveRes.ok) throw new Error("Échec de l'enregistrement de la photo.");
+      const saved = await saveRes.json();
+      setCurrentUser(saved);
+    } catch (err) {
+      alert(err.message || "Impossible de mettre à jour la photo de profil.");
+    } finally {
+      setUploadingPic(false);
+      e.target.value = '';
     }
   };
 
@@ -269,10 +286,14 @@ export default function Dashboard({ isAuthenticated, onLoginSuccess, onLogout })
                   <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-4 text-center">
                     <div className="relative w-20 h-20 mx-auto mb-3 group">
                       <div className="w-20 h-20 bg-slate-200 rounded-full overflow-hidden flex items-center justify-center text-2xl font-bold text-slate-700 border-2 border-slate-300">
-                        {profilePic ? <img src={profilePic} alt="Profil" className="w-full h-full object-cover" /> : <span>👑</span>}
+                        {hasCustomAvatar(currentUser?.profile_image)
+                          ? <img src={currentUser.profile_image} alt="Profil" className="w-full h-full object-cover" />
+                          : <span>👑</span>}
                       </div>
-                      <label htmlFor="profile-pic-input" className="absolute inset-0 bg-black/40 rounded-full flex items-center justify-center text-white text-xs opacity-0 group-hover:opacity-100 transition cursor-pointer">Modifier</label>
-                      <input id="profile-pic-input" type="file" accept="image/*" className="hidden" onChange={handleImageChange} />
+                      <label htmlFor="profile-pic-input" className="absolute inset-0 bg-black/40 rounded-full flex items-center justify-center text-white text-xs opacity-0 group-hover:opacity-100 transition cursor-pointer">
+                        {uploadingPic ? '⏳' : 'Modifier'}
+                      </label>
+                      <input id="profile-pic-input" type="file" accept="image/*" className="hidden" onChange={handleImageChange} disabled={uploadingPic} />
                     </div>
                     <h2 className="font-bold text-slate-900">{currentUser?.full_name || 'Chargement...'}</h2>
                     <p className="text-xs text-red-600 font-semibold uppercase mt-0.5">
