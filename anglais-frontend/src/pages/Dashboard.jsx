@@ -24,10 +24,10 @@ const WORD_OF_THE_DAY = [
 ];
 
 const PROGRAMMES = [
-  "🎓 Parakou Bilingue English Program (3/9 mois)",
+  "🇺🇸 Parakou Bilingue English Program (3/9 mois)",
   "🇬🇧 CAPAR — Camp d'anglais accéléré (1 mois)",
-  "👦👧 English Colony (Kids)",
-  "🗣️ Traduction & Interprétation",
+  "🇨🇦 English Colony (Kids)",
+  "🇺🇸🇫🇷 Traduction & Interprétation",
   "Club YEE (8 mois / année académique)",
 ];
 
