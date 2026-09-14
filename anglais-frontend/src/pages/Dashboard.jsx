@@ -24,11 +24,11 @@ const WORD_OF_THE_DAY = [
 ];
 
 const PROGRAMMES = [
-  "🎓 Parakou Bilingue English Program (3/6/9 mois)",
-  "⚡ CAPAR — Camp d'anglais accéléré (1 mois)",
-  "🧒 English Colony (Kids)",
-  "📄 Traduction & Interprétation",
-  "🌍 Club YEE (8 mois / année académique)",
+  "🎓 Parakou Bilingue English Program (3/9 mois)",
+  "🇬🇧 CAPAR — Camp d'anglais accéléré (1 mois)",
+  "👦👧 English Colony (Kids)",
+  "🗣️ Traduction & Interprétation",
+  "Club YEE (8 mois / année académique)",
 ];
 
 const getWordOfTheDay = () => {
@@ -132,7 +132,7 @@ export default function Dashboard({ isAuthenticated, onLoginSuccess, onLogout })
         <div className="max-w-6xl mx-auto px-3 sm:px-4 py-3 flex justify-between items-center gap-2">
           <div className="flex items-center space-x-6 min-w-0">
             <h1 className="text-base sm:text-xl font-black tracking-wide flex items-center gap-1.5 sm:gap-2 cursor-pointer shrink-0" onClick={() => navigateTo('home')}>
-              <span>English Club</span>
+              <span>EAGLES INSTITUTE</span>
               <span className="text-[10px] sm:text-xs bg-red-600 text-white font-bold px-1.5 py-0.5 rounded uppercase">YEE</span>
             </h1>
             <nav className="hidden md:flex space-x-5 text-sm font-medium text-slate-300">
