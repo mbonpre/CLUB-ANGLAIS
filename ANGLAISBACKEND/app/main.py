@@ -10,7 +10,8 @@ from app.models.user import User, UserRole
 from app.models.assessment_question import AssessmentQuestion
 from app.services.auth_utils import get_password_hash
 from app.models import user, post, message, project, account_request, level_history, room, level_assessment, assessment_question
-
+import subprocess
+from fastapi import Query, HTTPException
 app = FastAPI(
     title="Club d'Anglais API",
     description="API Backend de la plateforme communautaire et réseau",
@@ -62,6 +63,22 @@ app.include_router(rooms.router)
 app.include_router(assessment.router)
 
 
+from alembic.config import Config
+from alembic import command
+
+
+@app.on_event("startup")
+def run_migrations():
+    """Applique automatiquement les migrations Alembic en attente au démarrage.
+    Utile sur Render (plan gratuit) où il n'y a pas d'accès Shell.
+    On log le résultat au lieu de laisser planter le démarrage, pour éviter
+    qu'un souci de migration ne coupe complètement l'accès à l'API."""
+    try:
+        alembic_cfg = Config("alembic.ini")
+        command.upgrade(alembic_cfg, "head")
+        print(">>> Migrations Alembic appliquées avec succès.")
+    except Exception as e:
+        print(f">>> ERREUR lors des migrations Alembic : {type(e).__name__}: {e}")
 @app.get("/")
 def read_root():
     return {"status": "online", "message": "API Club d'Anglais opérationnelle !"}

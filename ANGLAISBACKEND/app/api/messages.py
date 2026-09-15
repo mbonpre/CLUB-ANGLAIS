@@ -1,3 +1,5 @@
+import json
+
 from fastapi import APIRouter, Depends, HTTPException, status, WebSocket, WebSocketDisconnect, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import or_, and_
@@ -24,6 +26,18 @@ def _get_user_id_from_token(token: str) -> int:
     return int(user_id)
 
 
+def _reply_preview(replied_message) -> dict | None:
+    """Construit un aperçu léger du message cité (façon WhatsApp), sans dupliquer
+    de données : juste de quoi afficher la citation dans la bulle."""
+    if not replied_message:
+        return None
+    return {
+        "id": replied_message.id,
+        "content": replied_message.content,
+        "sender_id": replied_message.sender_id if hasattr(replied_message, "sender_id") else None,
+    }
+
+
 @router.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket, token: str = Query(...)):
     try:
@@ -43,6 +57,7 @@ async def websocket_endpoint(websocket: WebSocket, token: str = Query(...)):
             if room_id is not None:
                 content = (data.get("content") or "").strip()
                 media_url = data.get("media_url")
+                reply_to_id = data.get("reply_to_id")
                 if not content and not media_url:
                     continue
 
@@ -55,7 +70,13 @@ async def websocket_endpoint(websocket: WebSocket, token: str = Query(...)):
                     if not membership or not room or room.is_closed:
                         continue
 
-                    new_msg = RoomMessage(room_id=room_id, sender_id=user_id, content=content or None, media_url=media_url)
+                    new_msg = RoomMessage(
+                        room_id=room_id,
+                        sender_id=user_id,
+                        content=content or None,
+                        media_url=media_url,
+                        reply_to_id=reply_to_id,
+                    )
                     db.add(new_msg)
                     db.commit()
                     db.refresh(new_msg)
@@ -71,6 +92,8 @@ async def websocket_endpoint(websocket: WebSocket, token: str = Query(...)):
                         "content": new_msg.content,
                         "media_url": new_msg.media_url,
                         "created_at": new_msg.created_at.isoformat(),
+                        "reply_to_id": new_msg.reply_to_id,
+                        "reply_to": _reply_preview(getattr(new_msg, "reply_to", None)),
                     }
                 finally:
                     db.close()
@@ -83,6 +106,7 @@ async def websocket_endpoint(websocket: WebSocket, token: str = Query(...)):
             receiver_id = data.get("receiver_id")
             content = (data.get("content") or "").strip()
             media_url = data.get("media_url")
+            reply_to_id = data.get("reply_to_id")
 
             if receiver_id is None or (not content and not media_url):
                 continue
@@ -94,6 +118,7 @@ async def websocket_endpoint(websocket: WebSocket, token: str = Query(...)):
                     receiver_id=int(receiver_id),
                     content=content or None,
                     media_url=media_url,
+                    reply_to_id=reply_to_id,
                 )
                 db.add(new_message)
                 db.commit()
@@ -107,6 +132,8 @@ async def websocket_endpoint(websocket: WebSocket, token: str = Query(...)):
                     "media_url": new_message.media_url,
                     "is_read": new_message.is_read,
                     "created_at": new_message.created_at.isoformat(),
+                    "reply_to_id": new_message.reply_to_id,
+                    "reply_to": _reply_preview(getattr(new_message, "reply_to", None)),
                 }
             finally:
                 db.close()
@@ -179,6 +206,7 @@ async def edit_message(
         "type": "private_message", "id": msg.id, "sender_id": msg.sender_id, "receiver_id": msg.receiver_id,
         "content": msg.content, "media_url": msg.media_url, "is_read": msg.is_read,
         "created_at": msg.created_at.isoformat(), "edited": True,
+        "reply_to_id": msg.reply_to_id, "reply_to": _reply_preview(getattr(msg, "reply_to", None)),
     }
     await manager.send_personal_message(payload, msg.receiver_id)
     await manager.send_personal_message(payload, msg.sender_id)
@@ -233,12 +261,11 @@ def get_conversation_history(
         db.commit()
 
     return messages
-# À AJOUTER dans app/api/messages.py (n'importe où après les autres routes, avant le dernier historique) :
-import json
-from pydantic import BaseModel as _BM
 
-class ReactionIn(_BM):
+
+class ReactionIn(BaseModel):
     emoji: str
+
 
 @router.post("/{message_id}/react")
 async def react_to_message(message_id: int, data: ReactionIn, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
@@ -253,3 +280,18 @@ async def react_to_message(message_id: int, data: ReactionIn, db: Session = Depe
     await manager.send_personal_message(payload, msg.sender_id)
     await manager.send_personal_message(payload, msg.receiver_id)
     return {"reactions": reactions}
+
+
+# --- Notifications de validation de compte (nouveau) ---------------------
+# Hook prêt à l'emploi : appelez cette fonction depuis votre route
+# d'approbation de compte (probablement dans app/api/auth.py ou un routeur
+# admin que je n'ai pas reçu) pour déclencher la notification "façon
+# WhatsApp" côté client dès qu'un compte est validé.
+#
+# Exemple d'utilisation dans la route qui valide un compte :
+#
+#   from app.api.messages import notify_account_validated
+#   await notify_account_validated(user.id)
+#
+async def notify_account_validated(user_id: int, message: str = "Votre compte a été validé. Bienvenue !"):
+    await manager.send_personal_message({"type": "account_validated", "message": message}, user_id)
