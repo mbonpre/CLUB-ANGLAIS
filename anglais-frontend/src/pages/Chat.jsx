@@ -62,6 +62,27 @@ const formatTime = (iso) => {
   } catch { return ''; }
 };
 
+// Un message "sticker" façon WhatsApp : un ou quelques emojis seuls, sans texte autour.
+// On l'affiche en grand, sans le fond de bulle habituel derrière le texte.
+const isEmojiOnly = (text) => {
+  if (!text) return false;
+  const stripped = text.trim();
+  if (stripped.length === 0 || stripped.length > 12) return false;
+  try {
+    return /^(\p{Extended_Pictographic}|\s)+$/u.test(stripped);
+  } catch {
+    // Environnements sans support des Unicode property escapes : on désactive juste l'effet visuel.
+    return false;
+  }
+};
+
+// Emojis de réaction rapide façon WhatsApp, affichés au-dessus de la bulle lors d'un appui long.
+const QUICK_REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '🙏'];
+
+// Distance de swipe (px) à partir de laquelle on déclenche la réponse, et distance max de suivi du doigt.
+const SWIPE_TRIGGER_PX = 55;
+const SWIPE_MAX_PX = 80;
+
 export default function ChatClubAnglais() {
   const [darkMode, setDarkMode] = useState(false);
   const [dictLang, setDictLang] = useState('en');
@@ -101,18 +122,92 @@ export default function ChatClubAnglais() {
   const [forwardModalMsg, setForwardModalMsg] = useState(null);
   const [forwardSearch, setForwardSearch] = useState('');
 
+  // --- Réaction rapide façon WhatsApp (appui long) ---
+  const [reactionBarMsgId, setReactionBarMsgId] = useState(null);
+  // --- Swipe pour répondre façon WhatsApp (glissement vers la droite) ---
+  const [swipeOffsets, setSwipeOffsets] = useState({});
+
+  // --- Notifications / sourdine (nouveau) ---
+  const [mutedChats, setMutedChats] = useState(() => {
+    try { return new Set(JSON.parse(localStorage.getItem('mutedChats') || '[]')); } catch { return new Set(); }
+  });
+
   const fileInputRef = useRef(null);
   const docInputRef = useRef(null);
   const stickerPickerRef = useRef(null);
   const attachMenuRef = useRef(null);
+  const reactionBarRef = useRef(null);
   const wsRef = useRef(null);
   const messagesEndRef = useRef(null);
+  const longPressTimerRef = useRef(null);
+
+  // Suivi du geste en cours (swipe / appui long), par référence pour rester à jour
+  // pendant les callbacks touch sans re-render intempestif.
+  const gestureRef = useRef({ id: null, startX: 0, startY: 0, mode: null }); // mode: 'pending' | 'swipe' | 'longpress-fired'
+
+  // Refs "miroir" pour éviter les closures obsolètes dans le handler websocket
+  // (qui n'est (re)créé qu'au changement de currentUser.id).
+  const mutedChatsRef = useRef(mutedChats);
+  const activeContactRef = useRef(null);
+  const activeRoomRef = useRef(null);
+  const membersRef = useRef([]);
+  const roomsRef = useRef([]);
+
+  useEffect(() => { mutedChatsRef.current = mutedChats; }, [mutedChats]);
+  useEffect(() => { activeContactRef.current = activeContact; }, [activeContact]);
+  useEffect(() => { activeRoomRef.current = activeRoom; }, [activeRoom]);
+  useEffect(() => { membersRef.current = members; }, [members]);
+  useEffect(() => { roomsRef.current = rooms; }, [rooms]);
 
   const currentMessages = activeContact ? (messagesByContact[activeContact.id] || []) : [];
+  const activeRoomMessages = activeRoom ? (roomMessagesByRoom[activeRoom.id] || []) : [];
   const suggestions = getSuggestions(inputText, dictLang);
   const stickerList = ['😀', '😂', '🔥', '👍', '❤️', '🎉', '🚀', '😎'];
 
   const authHeaders = () => ({ 'Authorization': `Bearer ${localStorage.getItem('token')}` });
+
+  const chatKey = (type, id) => `${type}:${id}`;
+  const isMuted = (type, id) => mutedChats.has(chatKey(type, id));
+  const toggleMute = (type, id) => {
+    setMutedChats(prev => {
+      const next = new Set(prev);
+      const key = chatKey(type, id);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      localStorage.setItem('mutedChats', JSON.stringify([...next]));
+      return next;
+    });
+  };
+
+  // Petit bip généré (pas besoin de fichier audio) pour les nouveaux messages
+  const playBeep = () => {
+    try {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const o = ctx.createOscillator();
+      const g = ctx.createGain();
+      o.connect(g); g.connect(ctx.destination);
+      o.frequency.value = 880;
+      g.gain.setValueAtTime(0.16, ctx.currentTime);
+      g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.35);
+      o.start(); o.stop(ctx.currentTime + 0.35);
+    } catch (e) { /* audio bloqué par le navigateur : on ignore silencieusement */ }
+  };
+
+  const notify = (title, body, muteKey) => {
+    if (mutedChatsRef.current.has(muteKey)) return;
+    playBeep();
+    if (typeof Notification !== 'undefined' && Notification.permission === 'granted' && document.hidden) {
+      try {
+        const n = new Notification(title, { body: body || '', icon: '/favicon.ico' });
+        n.onclick = () => { window.focus(); n.close(); };
+      } catch (e) { /* certains navigateurs mobiles n'autorisent pas new Notification() */ }
+    }
+  };
+
+  const resolveSenderName = (senderId) => {
+    if (senderId === currentUser?.id) return 'Vous';
+    const m = membersRef.current.find(mm => mm.id === senderId);
+    return m?.full_name || 'Membre';
+  };
 
   useEffect(() => {
     fetch(   `${API_BASE_URL}/auth/me`, { headers: authHeaders() })
@@ -128,6 +223,129 @@ export default function ChatClubAnglais() {
     fetchRooms();
     refreshConversationPreviews();
   }, []);
+
+  useEffect(() => {
+    fetch(   `${API_BASE_URL}/auth/me`, { headers: authHeaders() })
+      .then(res => res.ok ? res.json() : null)
+      .then(setCurrentUser)
+      .catch(() => setCurrentUser(null));
+
+    fetch(   `${API_BASE_URL}/users/`)
+      .then(res => res.json())
+      .then(data => setMembers(Array.isArray(data) ? data : []))
+      .catch(() => setMembers([]));
+
+    fetchRooms();
+    refreshConversationPreviews();
+  }, []);
+
+  useEffect(() => {
+    const setupPush = async () => {
+      if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
+      if (!currentUser) return;
+
+      try {
+        const registration = await navigator.serviceWorker.register('/sw.js');
+
+        const keyRes = await fetch(`${API_BASE_URL}/messages/push/public-key`);
+        if (!keyRes.ok) return;
+        const { publicKey } = await keyRes.json();
+
+        const urlBase64ToUint8Array = (base64String) => {
+          const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
+          const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+          const rawData = window.atob(base64);
+          return Uint8Array.from([...rawData].map((c) => c.charCodeAt(0)));
+        };
+
+        let subscription = await registration.pushManager.getSubscription();
+        if (!subscription) {
+          subscription = await registration.pushManager.subscribe({
+            userVisibleOnly: true,
+            applicationServerKey: urlBase64ToUint8Array(publicKey),
+          });
+        }
+
+        await fetch(`${API_BASE_URL}/messages/push/subscribe`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...authHeaders() },
+          body: JSON.stringify(subscription.toJSON()),
+        });
+      } catch (err) {
+        console.error('Erreur configuration notifications push :', err);
+      }
+    };
+
+    setupPush();
+  }, [currentUser]);
+
+  // --- Notifications push (nouveau) : fonctionnent même app/onglet fermé(e) ---
+  // (contrairement au bip + Notification() du websocket, qui exigent que l'app
+  // tourne encore en arrière-plan). Nécessite qu'un Service Worker (public/sw.js)
+  // soit servi à la racine du site.
+  //
+  // IMPORTANT : Firefox (contrairement à Chrome) refuse d'appeler
+  // Notification.requestPermission() automatiquement au chargement de la page —
+  // ça doit venir d'un clic direct de l'utilisateur. D'où le bouton ci-dessous
+  // plutôt qu'un appel dans un useEffect au montage.
+  const [showEnableNotifBanner, setShowEnableNotifBanner] = useState(false);
+
+  const urlBase64ToUint8Array = (base64String) => {
+    const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
+    const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+    const rawData = window.atob(base64);
+    return Uint8Array.from([...rawData].map((c) => c.charCodeAt(0)));
+  };
+
+  const registerPushNotifications = async () => {
+    if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
+    try {
+      const registration = await navigator.serviceWorker.register('/sw.js');
+
+      const keyRes = await fetch(`${API_BASE_URL}/messages/push/public-key`);
+      if (!keyRes.ok) return; // VAPID pas encore configurée côté serveur
+      const { publicKey } = await keyRes.json();
+
+      let subscription = await registration.pushManager.getSubscription();
+      if (!subscription) {
+        subscription = await registration.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlBase64ToUint8Array(publicKey),
+        });
+      }
+
+      await fetch(`${API_BASE_URL}/messages/push/subscribe`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify(subscription.toJSON()),
+      });
+    } catch (err) {
+      console.error('Erreur abonnement notifications push :', err);
+    }
+  };
+
+  // Appelée UNIQUEMENT depuis le onClick du bouton "Activer les notifications" :
+  // c'est ce lien direct avec le clic qui satisfait l'exigence de Firefox.
+  const handleEnableNotifications = async () => {
+    if (typeof Notification === 'undefined') return;
+    const result = await Notification.requestPermission().catch(() => 'denied');
+    setShowEnableNotifBanner(false);
+    if (result === 'granted') {
+      registerPushNotifications();
+    }
+  };
+
+  useEffect(() => {
+    if (!currentUser?.id || typeof Notification === 'undefined') return;
+    if (Notification.permission === 'granted') {
+      // Déjà autorisé lors d'une session précédente : pas besoin de redemander,
+      // on (ré)enregistre juste l'abonnement silencieusement.
+      registerPushNotifications();
+    } else if (Notification.permission === 'default') {
+      // Pas encore répondu : on affiche un bouton, on ne prompt jamais tout seul.
+      setShowEnableNotifBanner(true);
+    }
+  }, [currentUser?.id]);
 
   const isStaff = currentUser && ['ADMIN', 'COMMUNITY_MANAGER'].includes(currentUser.role);
 
@@ -163,16 +381,32 @@ export default function ChatClubAnglais() {
     ws.onmessage = (event) => {
       const msg = JSON.parse(event.data);
 
+      // Notification de validation de compte (nécessite que le backend envoie
+      // {type: "account_validated", message: "..."} via le websocket — voir
+      // notify_account_validated() côté messages.py).
+      if (msg.type === 'account_validated') {
+        notify('Compte validé ✅', msg.message || 'Votre compte a été validé.', 'account');
+        return;
+      }
+
       if (msg.type === 'room_message') {
         setRoomMessagesByRoom(prev => {
           const existing = prev[msg.room_id] || [];
           if (existing.some(m => m.id === msg.id)) return prev;
           return { ...prev, [msg.room_id]: [...existing, msg] };
         });
+
+        const isOpenAndFocused = activeRoomRef.current?.id === msg.room_id && !document.hidden;
         setUnreadRoomIds(prev => {
-          if (activeRoom?.id === msg.room_id) return prev;
+          if (isOpenAndFocused) return prev;
           const next = new Set(prev); next.add(msg.room_id); return next;
         });
+
+        if (msg.sender?.id !== currentUser?.id && !isOpenAndFocused) {
+          const roomName = roomsRef.current.find(r => r.id === msg.room_id)?.name || 'Salon';
+          notify(`#${roomName}`, `${msg.sender?.full_name || 'Membre'} : ${msg.content || '📎 Pièce jointe'}`, chatKey('room', msg.room_id));
+        }
+
         fetchRooms();
         return;
       }
@@ -210,6 +444,11 @@ export default function ChatClubAnglais() {
         return { ...prev, [otherId]: [...existing, msg] };
       });
 
+      const isPrivateOpenAndFocused = activeContactRef.current?.id === otherId && !document.hidden;
+      if (msg.sender_id !== currentUser?.id && !msg.edited && !isPrivateOpenAndFocused) {
+        notify(resolveSenderName(msg.sender_id), msg.content || '📎 Pièce jointe', chatKey('contact', otherId));
+      }
+
       refreshConversationPreviews();
     };
 
@@ -217,9 +456,22 @@ export default function ChatClubAnglais() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentUser?.id]);
 
+  // Défilement auto vers le bas : conversation privée, salon, ou changement de conversation/salon actif.
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [currentMessages.length]);
+  }, [currentMessages.length, activeRoomMessages.length, activeContact?.id, activeRoom?.id]);
+
+  // Correction du bug de scroll mobile : quand le clavier virtuel s'ouvre/se ferme
+  // (au clic sur le champ de saisie), la fenêtre visible change de taille sans que
+  // la mise en page ne se recalcule toujours correctement -> on force un recalage.
+  useEffect(() => {
+    const scrollToBottom = () => messagesEndRef.current?.scrollIntoView({ behavior: 'auto' });
+    const vv = window.visualViewport;
+    if (vv) {
+      vv.addEventListener('resize', scrollToBottom);
+      return () => vv.removeEventListener('resize', scrollToBottom);
+    }
+  }, []);
 
   const menuRef = useRef(null);
 
@@ -228,13 +480,19 @@ export default function ChatClubAnglais() {
       if (attachMenuRef.current && !attachMenuRef.current.contains(event.target)) setShowAttachMenu(false);
       if (stickerPickerRef.current && !stickerPickerRef.current.contains(event.target)) setShowStickerPicker(false);
       if (menuRef.current && !menuRef.current.contains(event.target)) setSelectedMsgForMenu(null);
+      if (reactionBarRef.current && !reactionBarRef.current.contains(event.target)) setReactionBarMsgId(null);
     };
     document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
+    document.addEventListener('touchstart', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('touchstart', handleClickOutside);
+    };
   }, []);
 
   const openConversation = async (member) => {
     setActiveContact(member);
+    setReplyingTo(null);
     setLoadingHistory(true);
     try {
       const res = await fetch(`${API_BASE_URL}/messages/${member.id}`, { headers: authHeaders() });
@@ -262,8 +520,9 @@ export default function ChatClubAnglais() {
 
     if (chatMode === 'rooms') {
       if (!activeRoom) return;
-      sendPayload({ room_id: activeRoom.id, content: inputText.trim() });
+      sendPayload({ room_id: activeRoom.id, content: inputText.trim(), reply_to_id: replyingTo?.id || null });
       setInputText('');
+      setReplyingTo(null);
       return;
     }
 
@@ -280,7 +539,7 @@ export default function ChatClubAnglais() {
       return;
     }
 
-    sendPayload({ receiver_id: activeContact.id, content: inputText.trim() });
+    sendPayload({ receiver_id: activeContact.id, content: inputText.trim(), reply_to_id: replyingTo?.id || null });
     setInputText('');
     setReplyingTo(null);
   };
@@ -308,6 +567,7 @@ export default function ChatClubAnglais() {
   const openRoom = async (room) => {
     setActiveRoom(room);
     setActiveContact(null);
+    setReplyingTo(null);
     setUnreadRoomIds(prev => { const next = new Set(prev); next.delete(room.id); return next; });
     if (!room.is_member) return;
     setLoadingRoomHistory(true);
@@ -410,7 +670,8 @@ export default function ChatClubAnglais() {
       const res = await fetch(   `${API_BASE_URL}/upload/`, { method: 'POST', body: formData });
       if (!res.ok) throw new Error("Échec de l'upload");
       const data = await res.json();
-      sendPayload({ receiver_id: activeContact.id, content: file.name, media_url: data.url });
+      sendPayload({ receiver_id: activeContact.id, content: file.name, media_url: data.url, reply_to_id: replyingTo?.id || null });
+      setReplyingTo(null);
     } catch (err) {
       alert("Impossible d'envoyer ce fichier.");
       console.error(err);
@@ -422,9 +683,15 @@ export default function ChatClubAnglais() {
   };
 
   const handleSendSticker = (emoji) => {
-    if (!activeContact) return;
-    sendPayload({ receiver_id: activeContact.id, content: emoji });
+    if (chatMode === 'rooms') {
+      if (!activeRoom) return;
+      sendPayload({ room_id: activeRoom.id, content: emoji, reply_to_id: replyingTo?.id || null });
+    } else {
+      if (!activeContact) return;
+      sendPayload({ receiver_id: activeContact.id, content: emoji, reply_to_id: replyingTo?.id || null });
+    }
     setShowStickerPicker(false);
+    setReplyingTo(null);
   };
 
   const askClaudeStyleTranslate = async (text, target) => {
@@ -504,6 +771,97 @@ export default function ChatClubAnglais() {
     setInputText(tokens.join(' ') + ' ');
   };
 
+  const scrollToBottomSoon = () => setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 300);
+
+  // --- Gestes façon WhatsApp : glissement vers la droite = répondre, appui long = réactions rapides ---
+  // Un seul jeu de handlers, réutilisé pour les messages privés et les messages de salon.
+
+  const handleGestureStart = (msg, clientX, clientY) => {
+    gestureRef.current = { id: msg.id, startX: clientX, startY: clientY, mode: 'pending' };
+    longPressTimerRef.current = setTimeout(() => {
+      if (gestureRef.current.id === msg.id && gestureRef.current.mode === 'pending') {
+        gestureRef.current.mode = 'longpress-fired';
+        if (navigator.vibrate) { try { navigator.vibrate(15); } catch (e) {} }
+        setReactionBarMsgId(msg.id);
+      }
+    }, 450);
+  };
+
+  const handleGestureMove = (msg, clientX, clientY) => {
+    const g = gestureRef.current;
+    if (g.id !== msg.id || g.mode === 'longpress-fired') return;
+    const dx = clientX - g.startX;
+    const dy = clientY - g.startY;
+
+    // Mouvement franc (dans n'importe quel sens) : on annule l'appui long.
+    if (g.mode === 'pending' && (Math.abs(dx) > 10 || Math.abs(dy) > 10)) {
+      clearTimeout(longPressTimerRef.current);
+      // On ne bascule en mode "swipe" que si le geste est surtout horizontal et vers la droite.
+      if (dx > 10 && Math.abs(dx) > Math.abs(dy)) {
+        g.mode = 'swipe';
+      } else {
+        g.mode = 'ignored';
+      }
+    }
+
+    if (g.mode === 'swipe') {
+      const clamped = Math.max(0, Math.min(SWIPE_MAX_PX, dx));
+      setSwipeOffsets(prev => ({ ...prev, [msg.id]: clamped }));
+    }
+  };
+
+  const handleGestureEnd = (msg) => {
+    clearTimeout(longPressTimerRef.current);
+    const g = gestureRef.current;
+    if (g.id === msg.id && g.mode === 'swipe') {
+      const offset = swipeOffsets[msg.id] || 0;
+      if (offset >= SWIPE_TRIGGER_PX) {
+        setReplyingTo(msg);
+      }
+    }
+    setSwipeOffsets(prev => {
+      if (!(msg.id in prev)) return prev;
+      const next = { ...prev };
+      delete next[msg.id];
+      return next;
+    });
+    gestureRef.current = { id: null, startX: 0, startY: 0, mode: null };
+  };
+
+  const bubbleGestureHandlers = (msg) => ({
+    onTouchStart: (e) => handleGestureStart(msg, e.touches[0].clientX, e.touches[0].clientY),
+    onTouchMove: (e) => handleGestureMove(msg, e.touches[0].clientX, e.touches[0].clientY),
+    onTouchEnd: () => handleGestureEnd(msg),
+    onMouseDown: (e) => handleGestureStart(msg, e.clientX, e.clientY),
+    onMouseMove: (e) => { if (e.buttons === 1) handleGestureMove(msg, e.clientX, e.clientY); },
+    onMouseUp: () => handleGestureEnd(msg),
+    onMouseLeave: () => handleGestureEnd(msg),
+  });
+
+  const handleQuickReact = (msg, emoji) => {
+    handleReact(msg, emoji);
+    setReactionBarMsgId(null);
+  };
+
+  // Barre flottante de réactions rapides, affichée au-dessus de la bulle lors d'un appui long.
+  const QuickReactionBar = ({ msg, isMe }) => (
+    <div
+      ref={reactionBarRef}
+      className={`absolute -top-11 z-50 flex items-center gap-0.5 px-1.5 py-1 rounded-full shadow-xl border ${isMe ? 'right-0' : 'left-0'} ${darkMode ? 'bg-[#1D4ED8] border-slate-700' : 'bg-white border-slate-200'}`}
+    >
+      {QUICK_REACTIONS.map((emoji) => (
+        <button
+          key={emoji}
+          type="button"
+          onClick={(e) => { e.stopPropagation(); handleQuickReact(msg, emoji); }}
+          className="text-xl px-1 py-0.5 rounded-full hover:scale-125 hover:bg-red-500/10 transition"
+        >
+          {emoji}
+        </button>
+      ))}
+    </div>
+  );
+
   const otherMembers = members.filter(m => m.id !== currentUser?.id);
   const filteredMembers = otherMembers.filter(m => m.full_name.toLowerCase().includes(globalSearch.toLowerCase()));
 
@@ -515,6 +873,26 @@ export default function ChatClubAnglais() {
     if (previewB) return 1;
     return a.full_name.localeCompare(b.full_name);
   });
+
+  const ReplyBanner = ({ target }) => target ? (
+    <div className={`px-4 py-2 border-t flex items-center justify-between text-xs ${darkMode ? 'bg-[#1E40AF] border-slate-800' : 'bg-slate-100 border-slate-200'}`}>
+      <div className="flex items-center gap-2 min-w-0">
+        <span className="w-1 h-8 bg-red-600 rounded-full shrink-0"></span>
+        <div className="min-w-0">
+          <p className="font-bold text-red-600">Réponse à {resolveSenderName(target.sender_id || target.sender?.id)}</p>
+          <p className="truncate text-slate-500">{target.content || '📎 Pièce jointe'}</p>
+        </div>
+      </div>
+      <button onClick={() => setReplyingTo(null)} className="font-bold hover:opacity-75 shrink-0 ml-2">✕</button>
+    </div>
+  ) : null;
+
+  const ReplyQuote = ({ reply, isMe }) => reply ? (
+    <div className={`mb-1.5 pl-2 py-1 border-l-4 rounded text-xs ${isMe ? 'border-white/70 bg-black/10' : 'border-red-500 bg-black/5'}`}>
+      <p className="font-bold">{resolveSenderName(reply.sender_id)}</p>
+      <p className="truncate opacity-90 max-w-[220px]">{reply.content || '📎 Pièce jointe'}</p>
+    </div>
+  ) : null;
 
   return (
     <div translate="no" className={`max-w-6xl mx-auto sm:rounded-2xl shadow-xl border overflow-hidden flex h-[85vh] sm:h-[685px] relative transition-colors duration-200 ${darkMode ? 'bg-[#1E3A8A] text-[#EDEFF3] border-slate-800' : 'bg-white text-[#15181D] border-slate-100'}`}>
@@ -529,6 +907,16 @@ export default function ChatClubAnglais() {
             {darkMode ? '☀️' : '🌙'}
           </button>
         </div>
+
+        {showEnableNotifBanner && (
+          <div className={`px-4 py-2.5 flex items-center justify-between gap-2 border-b ${darkMode ? 'bg-[#1D4ED8] border-slate-700' : 'bg-amber-50 border-amber-200'}`}>
+            <p className="text-xs font-medium">🔔 Active les notifications pour ne rater aucun message.</p>
+            <div className="flex items-center gap-2 shrink-0">
+              <button onClick={handleEnableNotifications} className="text-xs font-bold bg-red-600 hover:bg-red-700 text-white px-2.5 py-1 rounded-full">Activer</button>
+              <button onClick={() => setShowEnableNotifBanner(false)} className="text-xs text-slate-400 hover:text-slate-600">✕</button>
+            </div>
+          </div>
+        )}
 
         <div className={`flex border-b ${darkMode ? 'border-[#3B5FCC]' : 'border-[#EFF6FF]'}`}>
           <button
@@ -672,15 +1060,18 @@ export default function ChatClubAnglais() {
           ) : (
             <>
               <div className={`px-4 sm:px-6 py-4 border-b-2 flex items-center gap-3 justify-between ${darkMode ? 'bg-[#1E40AF]' : 'bg-white'}`} style={{ borderColor: activeRoom.color || '#DC2626' }}>
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-3 min-w-0">
                   <button type="button" onClick={() => setActiveRoom(null)} className="sm:hidden text-xl -ml-1 mr-1">←</button>
-                  <div className="w-10 h-10 rounded-full text-white flex items-center justify-center font-bold shadow-sm" style={{ background: activeRoom.color || '#DC2626' }}>#</div>
-                  <div>
-                    <h3 className="font-bold text-sm">{activeRoom.name}</h3>
-                    <p className="text-xs text-slate-400">{activeRoom.description || `${activeRoom.member_count} membre(s)`}</p>
+                  <div className="w-10 h-10 rounded-full text-white flex items-center justify-center font-bold shadow-sm shrink-0" style={{ background: activeRoom.color || '#DC2626' }}>#</div>
+                  <div className="min-w-0">
+                    <h3 className="font-bold text-sm truncate">{activeRoom.name}</h3>
+                    <p className="text-xs text-slate-400 truncate">{activeRoom.description || `${activeRoom.member_count} membre(s)`}</p>
                   </div>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 shrink-0">
+                  <button onClick={() => toggleMute('room', activeRoom.id)} title="Notifications" className="text-base">
+                    {isMuted('room', activeRoom.id) ? '🔕' : '🔔'}
+                  </button>
                   {activeRoom.pending_count > 0 && (
                     <button onClick={() => { fetchPending(activeRoom.id); setShowPendingModal(true); }} className="text-xs bg-amber-100 text-amber-700 font-bold px-2.5 py-1 rounded-full">
                       {activeRoom.pending_count} demande(s)
@@ -718,7 +1109,7 @@ export default function ChatClubAnglais() {
                 </div>
               )}
 
-              <div className={`flex-1 overflow-y-auto p-6 space-y-3 relative ${darkMode ? 'bg-[#1E3A8A]' : 'bg-[#EFF6FF]'}`}>
+              <div className={`flex-1 min-h-0 overflow-y-auto p-6 space-y-3 relative ${darkMode ? 'bg-[#1E3A8A]' : 'bg-[#EFF6FF]'}`}>
                 {loadingRoomHistory ? (
                   <p className="text-center text-slate-400 text-sm">Chargement...</p>
                 ) : (roomMessagesByRoom[activeRoom.id] || []).length === 0 ? (
@@ -727,11 +1118,30 @@ export default function ChatClubAnglais() {
                   (roomMessagesByRoom[activeRoom.id] || []).map(msg => {
                     const isMe = msg.sender?.id === currentUser?.id || msg.sender_id === currentUser?.id;
                     const senderName = msg.sender?.full_name || 'Membre';
+                    const offset = swipeOffsets[msg.id] || 0;
                     return (
-                      <div key={msg.id} className={`flex flex-col ${isMe ? 'items-end' : 'items-start'}`}>
+                      <div key={msg.id} className={`flex flex-col group relative ${isMe ? 'items-end' : 'items-start'}`}>
                         {!isMe && <span className="text-[10px] text-slate-400 ml-2 mb-0.5">{senderName}</span>}
-                        <div className={`max-w-[70%] rounded-2xl px-4 py-3 shadow-xs ${isMe ? 'bg-gradient-to-br from-red-600 to-rose-700 text-white rounded-br-none' : (darkMode ? 'bg-[#1D4ED8] text-white border border-slate-700 rounded-bl-none' : 'bg-white text-slate-900 border border-slate-200/80 rounded-bl-none')}`}>
-                          <p className="text-sm leading-relaxed whitespace-pre-wrap notranslate" translate="no">{msg.content}</p>
+                        {offset > 0 && (
+                          <span
+                            className="absolute top-1/2 -translate-y-1/2 text-red-500 text-lg pointer-events-none"
+                            style={{ left: isMe ? undefined : 4, right: isMe ? 4 : undefined, opacity: Math.min(1, offset / SWIPE_TRIGGER_PX) }}
+                          >
+                            ↩️
+                          </span>
+                        )}
+                        <div
+                          className={`relative max-w-[70%] rounded-2xl px-4 py-3 shadow-xs select-none ${isMe ? 'bg-gradient-to-br from-red-600 to-rose-700 text-white rounded-br-none' : (darkMode ? 'bg-[#1D4ED8] text-white border border-slate-700 rounded-bl-none' : 'bg-white text-slate-900 border border-slate-200/80 rounded-bl-none')}`}
+                          style={{ transform: `translateX(${offset}px)`, transition: offset === 0 ? 'transform 0.2s ease-out' : 'none' }}
+                          {...bubbleGestureHandlers(msg)}
+                        >
+                          {reactionBarMsgId === msg.id && <QuickReactionBar msg={msg} isMe={isMe} />}
+                          <ReplyQuote reply={msg.reply_to} isMe={isMe} />
+                          {isEmojiOnly(msg.content) ? (
+                            <p className="text-5xl leading-tight">{msg.content}</p>
+                          ) : (
+                            <p className="text-sm leading-relaxed whitespace-pre-wrap notranslate" translate="no">{msg.content}</p>
+                          )}
                           <p className={`text-[10px] mt-1 ${isMe ? 'text-red-100' : 'text-slate-400'}`}>{formatTime(msg.created_at)}</p>
                         </div>
                       </div>
@@ -741,9 +1151,20 @@ export default function ChatClubAnglais() {
                 <div ref={messagesEndRef} />
               </div>
 
-              <form onSubmit={handleSendMessage} className={`p-2 sm:p-4 border-t flex items-center gap-1 sm:gap-2 ${darkMode ? 'border-slate-800 bg-[#1E40AF]' : 'border-[#DBEAFE] bg-white'}`}>
+              <ReplyBanner target={replyingTo} />
+
+              <form onSubmit={handleSendMessage} className={`p-2 sm:p-4 border-t flex items-center gap-1 sm:gap-2 relative ${darkMode ? 'border-slate-800 bg-[#1E40AF]' : 'border-[#DBEAFE] bg-white'}`}>
+                {showStickerPicker && (
+                  <div ref={stickerPickerRef} className={`absolute bottom-20 left-2 sm:left-4 p-3 rounded-2xl shadow-2xl border grid grid-cols-4 gap-2 z-50 w-64 ${darkMode ? 'bg-[#1D4ED8] border-slate-700' : 'bg-white border-slate-200'}`}>
+                    {stickerList.map((emoji, i) => (
+                      <button key={i} type="button" onClick={() => handleSendSticker(emoji)} className="text-3xl p-2 rounded-xl hover:bg-red-500/15 transition">{emoji}</button>
+                    ))}
+                  </div>
+                )}
+                <button type="button" onClick={() => setShowStickerPicker(!showStickerPicker)} className="p-1.5 sm:p-2 rounded-xl text-base sm:text-lg hover:bg-slate-100/10 transition shrink-0">😊</button>
                 <input
                   type="text" value={inputText} onChange={(e) => setInputText(e.target.value)}
+                  onFocus={scrollToBottomSoon}
                   placeholder={`Écrire dans #${activeRoom.name}...`}
                   className={`flex-1 min-w-0 px-3 sm:px-4 py-2 sm:py-2.5 border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-red-500 ${darkMode ? 'bg-[#1D4ED8] border-slate-700 text-white' : 'bg-[#EFF6FF] border-slate-200'}`}
                 />
@@ -757,16 +1178,21 @@ export default function ChatClubAnglais() {
           </div>
         ) : (
           <>
-            <div className={`px-4 sm:px-6 py-4 border-b-2 border-red-600 flex items-center gap-3 ${darkMode ? 'bg-[#1E40AF]' : 'bg-white'}`}>
-              <button type="button" onClick={() => setActiveContact(null)} className="sm:hidden text-xl -ml-1 mr-1">←</button>
-              <Avatar name={activeContact.full_name} imageUrl={activeContact.profile_image} className="w-10 h-10 text-sm" />
-              <div>
-                <h3 className="font-bold text-sm">{activeContact.full_name}</h3>
-                <p className="text-xs text-slate-400">{activeContact.english_level}</p>
+            <div className={`px-4 sm:px-6 py-4 border-b-2 border-red-600 flex items-center gap-3 justify-between ${darkMode ? 'bg-[#1E40AF]' : 'bg-white'}`}>
+              <div className="flex items-center gap-3 min-w-0">
+                <button type="button" onClick={() => setActiveContact(null)} className="sm:hidden text-xl -ml-1 mr-1">←</button>
+                <Avatar name={activeContact.full_name} imageUrl={activeContact.profile_image} className="w-10 h-10 text-sm" />
+                <div className="min-w-0">
+                  <h3 className="font-bold text-sm truncate">{activeContact.full_name}</h3>
+                  <p className="text-xs text-slate-400 truncate">{activeContact.english_level}</p>
+                </div>
               </div>
+              <button onClick={() => toggleMute('contact', activeContact.id)} title="Notifications" className="text-lg shrink-0">
+                {isMuted('contact', activeContact.id) ? '🔕' : '🔔'}
+              </button>
             </div>
 
-            <div className={`flex-1 overflow-y-auto p-6 space-y-4 relative ${darkMode ? 'bg-[#1E3A8A]' : 'bg-[#EFF6FF]'}`}>
+            <div className={`flex-1 min-h-0 overflow-y-auto p-6 space-y-4 relative ${darkMode ? 'bg-[#1E3A8A]' : 'bg-[#EFF6FF]'}`}>
               <div className="absolute inset-0 pointer-events-none" style={{
                 opacity: darkMode ? 0.05 : 0.045,
                 backgroundImage: `repeating-linear-gradient(45deg, #DC2626 0, #DC2626 1.5px, transparent 1.5px, transparent 26px), repeating-linear-gradient(-45deg, #1E40AF 0, #1E40AF 1.5px, transparent 1.5px, transparent 26px)`
@@ -781,9 +1207,25 @@ export default function ChatClubAnglais() {
                   const isMe = msg.sender_id === currentUser?.id;
                   const isTranslating = !!translatingIds[msg.id];
                   const isTranslationVisible = !!translationsVisible[msg.id];
+                  const offset = swipeOffsets[msg.id] || 0;
                   return (
-                    <div key={msg.id} className={`flex flex-col group relative ${isMe ? 'items-end' : 'items-start'} ${selectedMsgForMenu === msg.id ? 'z-50' : (translationsVisible[msg.id] !== undefined ? 'z-20' : 'z-10')}`}>
-                      <div className={`relative max-w-[70%] rounded-2xl px-4 py-3 shadow-xs ${isMe ? 'bg-gradient-to-br from-red-600 to-rose-700 text-white rounded-br-none' : (darkMode ? 'bg-[#1D4ED8] text-white border border-slate-700 rounded-bl-none' : 'bg-white text-slate-900 border border-slate-200/80 rounded-bl-none')}`}>
+                    <div key={msg.id} className={`flex flex-col group relative ${isMe ? 'items-end' : 'items-start'} ${selectedMsgForMenu === msg.id || reactionBarMsgId === msg.id ? 'z-50' : (translationsVisible[msg.id] !== undefined ? 'z-20' : 'z-10')}`}>
+                      {offset > 0 && (
+                        <span
+                          className="absolute top-1/2 -translate-y-1/2 text-red-500 text-lg pointer-events-none"
+                          style={{ left: isMe ? undefined : 4, right: isMe ? 4 : undefined, opacity: Math.min(1, offset / SWIPE_TRIGGER_PX) }}
+                        >
+                          ↩️
+                        </span>
+                      )}
+                      <div
+                        className={`relative max-w-[70%] rounded-2xl px-4 py-3 shadow-xs select-none ${isMe ? 'bg-gradient-to-br from-red-600 to-rose-700 text-white rounded-br-none' : (darkMode ? 'bg-[#1D4ED8] text-white border border-slate-700 rounded-bl-none' : 'bg-white text-slate-900 border border-slate-200/80 rounded-bl-none')}`}
+                        style={{ transform: `translateX(${offset}px)`, transition: offset === 0 ? 'transform 0.2s ease-out' : 'none' }}
+                        {...bubbleGestureHandlers(msg)}
+                      >
+                        {reactionBarMsgId === msg.id && <QuickReactionBar msg={msg} isMe={isMe} />}
+                        <ReplyQuote reply={msg.reply_to} isMe={isMe} />
+
                         {msg.media_url && (
                           msg.media_url.match(/\.(jpeg|jpg|gif|png|webp)$/i) ? (
                             <img src={msg.media_url} alt={msg.content} className="rounded-lg mb-2 max-h-56 w-full object-cover" />
@@ -794,7 +1236,11 @@ export default function ChatClubAnglais() {
                           )
                         )}
                         {msg.content && !(msg.media_url && msg.content === msg.content && msg.media_url.includes(msg.content)) && (
-                          <p className="text-sm leading-relaxed whitespace-pre-wrap notranslate" translate="no">{msg.content}</p>
+                          isEmojiOnly(msg.content) ? (
+                            <p className="text-5xl leading-tight">{msg.content}</p>
+                          ) : (
+                            <p className="text-sm leading-relaxed whitespace-pre-wrap notranslate" translate="no">{msg.content}</p>
+                          )
                         )}
 
                         {isTranslating && <p className="text-[10px] italic opacity-70 mt-1">Traduction en cours...</p>}
@@ -812,13 +1258,11 @@ export default function ChatClubAnglais() {
                           </div>
                         )}
 
+                        {/* Seul le bouton de traduction reste ici — répondre passe par le glissement,
+                            réagir passe par l'appui long (barre de réactions rapides ci-dessus). */}
                         <div className={`flex items-center justify-between mt-2 pt-1 border-t text-[11px] gap-4 ${isMe ? 'border-white/20 text-red-100' : 'border-slate-700/20 text-slate-400'}`}>
                           <span>{formatTime(msg.created_at)}</span>
-                          <div className="flex items-center gap-2">
-                            <button type="button" onClick={() => handleReact(msg, '❤️')} className="hover:scale-125 transition">❤️</button>
-                            <button type="button" onClick={() => handleReact(msg, '👍')} className="hover:scale-125 transition">👍</button>
-                            <button type="button" onClick={() => basculerTraduction(msg)} disabled={isTranslating} className="hover:underline font-semibold disabled:opacity-50">🌐</button>
-                          </div>
+                          <button type="button" onClick={() => basculerTraduction(msg)} disabled={isTranslating} className="hover:underline font-semibold disabled:opacity-50">🌐</button>
                         </div>
 
                         {isMe && (
@@ -897,6 +1341,8 @@ export default function ChatClubAnglais() {
               </div>
             )}
 
+            {!editingMessageId && <ReplyBanner target={replyingTo} />}
+
             <form onSubmit={handleSendMessage} className={`p-2 sm:p-4 border-t flex items-center gap-1 sm:gap-2 relative ${darkMode ? 'border-slate-800 bg-[#1E40AF]' : 'border-[#DBEAFE] bg-white'}`}>
               {showStickerPicker && (
                 <div ref={stickerPickerRef} className={`absolute bottom-20 left-2 sm:left-4 p-3 rounded-2xl shadow-2xl border grid grid-cols-4 gap-2 z-50 w-64 ${darkMode ? 'bg-[#1D4ED8] border-slate-700' : 'bg-white border-slate-200'}`}>
@@ -941,6 +1387,7 @@ export default function ChatClubAnglais() {
 
               <input
                 type="text" value={inputText} onChange={(e) => setInputText(e.target.value)}
+                onFocus={scrollToBottomSoon}
                 placeholder="Écrivez votre message..."
                 className={`flex-1 min-w-0 px-3 sm:px-4 py-2 sm:py-2.5 border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-red-500 ${darkMode ? 'bg-[#1D4ED8] border-slate-700 text-white' : 'bg-[#EFF6FF] border-slate-200'}`}
               />
