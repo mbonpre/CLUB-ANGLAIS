@@ -10,7 +10,7 @@ from app.database import Base, SQLALCHEMY_DATABASE_URL
 # Importe TOUS les modèles pour qu'Alembic les voie dans Base.metadata
 from app.models import (
     user, post, message, project, account_request, level_history, room,
-    level_assessment, assessment_question, section_history
+    level_assessment, assessment_question, section_history, push_subscription
 )
 
 config = context.config

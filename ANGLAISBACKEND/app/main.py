@@ -9,7 +9,7 @@ from app.api import auth, posts, users, messages, upload, projects, translate, a
 from app.models.user import User, UserRole
 from app.models.assessment_question import AssessmentQuestion
 from app.services.auth_utils import get_password_hash
-from app.models import user, post, message, project, account_request, level_history, room, level_assessment, assessment_question
+from app.models import user, post, message, project, account_request, level_history, room, level_assessment, assessment_question, push_subscription
 import subprocess
 from fastapi import Query, HTTPException
 app = FastAPI(

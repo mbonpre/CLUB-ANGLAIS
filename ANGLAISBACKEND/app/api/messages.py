@@ -11,9 +11,12 @@ from app.database import get_db, SessionLocal
 from app.models.message import Message
 from app.models.user import User
 from app.models.room import Room, RoomMembership, RoomMessage
+from app.models.push_subscription import PushSubscription
 from app.schemas.message import MessageResponse, ConversationPreview
+from app.schemas.push import PushSubscriptionIn, PushUnsubscribeIn
 from app.services.auth_utils import get_current_user, SECRET_KEY, ALGORITHM
 from app.services.websocket import manager
+from app.services.push_service import send_push_to_user, VAPID_PUBLIC_KEY
 
 router = APIRouter(prefix="/messages", tags=["Messagerie Privée"])
 
@@ -95,6 +98,19 @@ async def websocket_endpoint(websocket: WebSocket, token: str = Query(...)):
                         "reply_to_id": new_msg.reply_to_id,
                         "reply_to": _reply_preview(getattr(new_msg, "reply_to", None)),
                     }
+
+                    # Notification push (nouveau) : chaque membre du salon, sauf
+                    # l'auteur, reçoit une notif même si son onglet est fermé.
+                    for member_id in member_ids:
+                        if member_id != user_id:
+                            send_push_to_user(
+                                db,
+                                member_id,
+                                title=f"#{room.name}",
+                                body=f"{sender.full_name} : {new_msg.content or '📎 Pièce jointe'}",
+                                url="/messagerie",
+                                tag=f"room-{room_id}",
+                            )
                 finally:
                     db.close()
 
@@ -135,6 +151,18 @@ async def websocket_endpoint(websocket: WebSocket, token: str = Query(...)):
                     "reply_to_id": new_message.reply_to_id,
                     "reply_to": _reply_preview(getattr(new_message, "reply_to", None)),
                 }
+
+                # Notification push (nouveau) : le destinataire est notifié même
+                # si son navigateur/app n'est pas ouvert(e).
+                sender = db.query(User).filter(User.id == user_id).first()
+                send_push_to_user(
+                    db,
+                    int(receiver_id),
+                    title=sender.full_name if sender else "Nouveau message",
+                    body=new_message.content or "📎 Pièce jointe",
+                    url="/messagerie",
+                    tag=f"contact-{user_id}",
+                )
             finally:
                 db.close()
 
@@ -179,6 +207,53 @@ def get_conversations(
 
     results.sort(key=lambda r: r.last_message_at, reverse=True)
     return results
+
+
+# --- Notifications push : clé publique + abonnement/désabonnement (nouveau) ---
+
+@router.get("/push/public-key")
+def get_push_public_key():
+    """Fournit la clé publique VAPID au frontend pour PushManager.subscribe()."""
+    if not VAPID_PUBLIC_KEY:
+        raise HTTPException(status_code=503, detail="Notifications push non configurées côté serveur.")
+    return {"publicKey": VAPID_PUBLIC_KEY}
+
+
+@router.post("/push/subscribe")
+def subscribe_to_push(
+    data: PushSubscriptionIn,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Enregistre (ou met à jour) l'abonnement push envoyé par le navigateur."""
+    existing = db.query(PushSubscription).filter(PushSubscription.endpoint == data.endpoint).first()
+    if existing:
+        existing.user_id = current_user.id
+        existing.p256dh = data.keys.p256dh
+        existing.auth = data.keys.auth
+    else:
+        db.add(PushSubscription(
+            user_id=current_user.id,
+            endpoint=data.endpoint,
+            p256dh=data.keys.p256dh,
+            auth=data.keys.auth,
+        ))
+    db.commit()
+    return {"message": "Abonnement enregistré."}
+
+
+@router.post("/push/unsubscribe")
+def unsubscribe_from_push(
+    data: PushUnsubscribeIn,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    db.query(PushSubscription).filter(
+        PushSubscription.endpoint == data.endpoint,
+        PushSubscription.user_id == current_user.id,
+    ).delete()
+    db.commit()
+    return {"message": "Désabonnement effectué."}
 
 
 class MessageEdit(BaseModel):
