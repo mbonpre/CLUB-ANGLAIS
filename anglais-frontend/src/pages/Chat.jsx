@@ -225,21 +225,6 @@ export default function ChatClubAnglais() {
   }, []);
 
   useEffect(() => {
-    fetch(   `${API_BASE_URL}/auth/me`, { headers: authHeaders() })
-      .then(res => res.ok ? res.json() : null)
-      .then(setCurrentUser)
-      .catch(() => setCurrentUser(null));
-
-    fetch(   `${API_BASE_URL}/users/`)
-      .then(res => res.json())
-      .then(data => setMembers(Array.isArray(data) ? data : []))
-      .catch(() => setMembers([]));
-
-    fetchRooms();
-    refreshConversationPreviews();
-  }, []);
-
-  useEffect(() => {
     const setupPush = async () => {
       if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
       if (!currentUser) return;
@@ -393,7 +378,12 @@ export default function ChatClubAnglais() {
         setRoomMessagesByRoom(prev => {
           const existing = prev[msg.room_id] || [];
           if (existing.some(m => m.id === msg.id)) return prev;
-          return { ...prev, [msg.room_id]: [...existing, msg] };
+          // On retire le message "optimiste" (affiché immédiatement à l'envoi)
+          // qui correspond à celui que le serveur vient de confirmer, pour éviter le doublon.
+          const withoutOptimistic = existing.filter(
+            m => !(m._optimistic && m.sender_id === (msg.sender?.id ?? msg.sender_id) && m.content === msg.content)
+          );
+          return { ...prev, [msg.room_id]: [...withoutOptimistic, msg] };
         });
 
         const isOpenAndFocused = activeRoomRef.current?.id === msg.room_id && !document.hidden;
@@ -441,7 +431,11 @@ export default function ChatClubAnglais() {
           return { ...prev, [otherId]: existing.map(m => m.id === msg.id ? msg : m) };
         }
         if (existing.some(m => m.id === msg.id)) return prev;
-        return { ...prev, [otherId]: [...existing, msg] };
+        // Idem en messages privés : on remplace le message optimiste par la version confirmée du serveur.
+        const withoutOptimistic = existing.filter(
+          m => !(m._optimistic && m.sender_id === msg.sender_id && m.content === msg.content)
+        );
+        return { ...prev, [otherId]: [...withoutOptimistic, msg] };
       });
 
       const isPrivateOpenAndFocused = activeContactRef.current?.id === otherId && !document.hidden;
@@ -514,13 +508,34 @@ export default function ChatClubAnglais() {
     }
   };
 
+  // Envoi optimiste : le message apparaît immédiatement dans notre propre fenêtre,
+  // sans attendre que le serveur nous le renvoie via le websocket. Il est marqué
+  // "_optimistic" et sera silencieusement remplacé par la version confirmée du
+  // serveur dès qu'elle arrive (voir ws.onmessage ci-dessus).
   const handleSendMessage = (e) => {
     e.preventDefault();
     if (!inputText.trim()) return;
+    const text = inputText.trim();
+    const tempId = `temp-${Date.now()}-${Math.random()}`;
 
     if (chatMode === 'rooms') {
       if (!activeRoom) return;
-      sendPayload({ room_id: activeRoom.id, content: inputText.trim(), reply_to_id: replyingTo?.id || null });
+      const optimisticMsg = {
+        id: tempId,
+        room_id: activeRoom.id,
+        sender_id: currentUser?.id,
+        sender: { id: currentUser?.id, full_name: currentUser?.full_name },
+        content: text,
+        reply_to: replyingTo || null,
+        reply_to_id: replyingTo?.id || null,
+        created_at: new Date().toISOString(),
+        _optimistic: true,
+      };
+      setRoomMessagesByRoom(prev => ({
+        ...prev,
+        [activeRoom.id]: [...(prev[activeRoom.id] || []), optimisticMsg],
+      }));
+      sendPayload({ room_id: activeRoom.id, content: text, reply_to_id: replyingTo?.id || null });
       setInputText('');
       setReplyingTo(null);
       return;
@@ -532,14 +547,28 @@ export default function ChatClubAnglais() {
       fetch(`${API_BASE_URL}/messages/${editingMessageId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json', ...authHeaders() },
-        body: JSON.stringify({ content: inputText.trim() }),
+        body: JSON.stringify({ content: text }),
       }).catch(err => console.error('Erreur modification :', err));
       setEditingMessageId(null);
       setInputText('');
       return;
     }
 
-    sendPayload({ receiver_id: activeContact.id, content: inputText.trim(), reply_to_id: replyingTo?.id || null });
+    const optimisticMsg = {
+      id: tempId,
+      sender_id: currentUser?.id,
+      receiver_id: activeContact.id,
+      content: text,
+      reply_to: replyingTo || null,
+      reply_to_id: replyingTo?.id || null,
+      created_at: new Date().toISOString(),
+      _optimistic: true,
+    };
+    setMessagesByContact(prev => ({
+      ...prev,
+      [activeContact.id]: [...(prev[activeContact.id] || []), optimisticMsg],
+    }));
+    sendPayload({ receiver_id: activeContact.id, content: text, reply_to_id: replyingTo?.id || null });
     setInputText('');
     setReplyingTo(null);
   };
@@ -1131,7 +1160,7 @@ export default function ChatClubAnglais() {
                           </span>
                         )}
                         <div
-                          className={`relative max-w-[70%] rounded-2xl px-4 py-3 shadow-xs select-none ${isMe ? 'bg-gradient-to-br from-red-600 to-rose-700 text-white rounded-br-none' : (darkMode ? 'bg-[#1D4ED8] text-white border border-slate-700 rounded-bl-none' : 'bg-white text-slate-900 border border-slate-200/80 rounded-bl-none')}`}
+                          className={`relative max-w-[70%] rounded-2xl px-4 py-3 shadow-xs select-none ${isMe ? 'bg-gradient-to-br from-red-600 to-rose-700 text-white rounded-br-none' : (darkMode ? 'bg-[#1D4ED8] text-white border border-slate-700 rounded-bl-none' : 'bg-white text-slate-900 border border-slate-200/80 rounded-bl-none')} ${msg._optimistic ? 'opacity-70' : ''}`}
                           style={{ transform: `translateX(${offset}px)`, transition: offset === 0 ? 'transform 0.2s ease-out' : 'none' }}
                           {...bubbleGestureHandlers(msg)}
                         >
@@ -1142,7 +1171,7 @@ export default function ChatClubAnglais() {
                           ) : (
                             <p className="text-sm leading-relaxed whitespace-pre-wrap notranslate" translate="no">{msg.content}</p>
                           )}
-                          <p className={`text-[10px] mt-1 ${isMe ? 'text-red-100' : 'text-slate-400'}`}>{formatTime(msg.created_at)}</p>
+                          <p className={`text-[10px] mt-1 ${isMe ? 'text-red-100' : 'text-slate-400'}`}>{msg._optimistic ? 'Envoi...' : formatTime(msg.created_at)}</p>
                         </div>
                       </div>
                     );
@@ -1219,7 +1248,7 @@ export default function ChatClubAnglais() {
                         </span>
                       )}
                       <div
-                        className={`relative max-w-[70%] rounded-2xl px-4 py-3 shadow-xs select-none ${isMe ? 'bg-gradient-to-br from-red-600 to-rose-700 text-white rounded-br-none' : (darkMode ? 'bg-[#1D4ED8] text-white border border-slate-700 rounded-bl-none' : 'bg-white text-slate-900 border border-slate-200/80 rounded-bl-none')}`}
+                        className={`relative max-w-[70%] rounded-2xl px-4 py-3 shadow-xs select-none ${isMe ? 'bg-gradient-to-br from-red-600 to-rose-700 text-white rounded-br-none' : (darkMode ? 'bg-[#1D4ED8] text-white border border-slate-700 rounded-bl-none' : 'bg-white text-slate-900 border border-slate-200/80 rounded-bl-none')} ${msg._optimistic ? 'opacity-70' : ''}`}
                         style={{ transform: `translateX(${offset}px)`, transition: offset === 0 ? 'transform 0.2s ease-out' : 'none' }}
                         {...bubbleGestureHandlers(msg)}
                       >
@@ -1261,7 +1290,7 @@ export default function ChatClubAnglais() {
                         {/* Seul le bouton de traduction reste ici — répondre passe par le glissement,
                             réagir passe par l'appui long (barre de réactions rapides ci-dessus). */}
                         <div className={`flex items-center justify-between mt-2 pt-1 border-t text-[11px] gap-4 ${isMe ? 'border-white/20 text-red-100' : 'border-slate-700/20 text-slate-400'}`}>
-                          <span>{formatTime(msg.created_at)}</span>
+                          <span>{msg._optimistic ? 'Envoi...' : formatTime(msg.created_at)}</span>
                           <button type="button" onClick={() => basculerTraduction(msg)} disabled={isTranslating} className="hover:underline font-semibold disabled:opacity-50">🌐</button>
                         </div>
 
