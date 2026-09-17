@@ -169,7 +169,7 @@ async def websocket_endpoint(websocket: WebSocket, token: str = Query(...)):
             await manager.send_personal_message(payload, int(receiver_id))
             await manager.send_personal_message(payload, user_id)
     except WebSocketDisconnect:
-        manager.disconnect(user_id)
+        manager.disconnect(user_id, websocket)
 
 
 @router.get("/conversations", response_model=List[ConversationPreview])
