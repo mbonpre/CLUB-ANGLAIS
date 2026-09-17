@@ -321,16 +321,59 @@ export default function ChatClubAnglais() {
   };
 
   useEffect(() => {
-    if (!currentUser?.id || typeof Notification === 'undefined') return;
-    if (Notification.permission === 'granted') {
-      // Déjà autorisé lors d'une session précédente : pas besoin de redemander,
-      // on (ré)enregistre juste l'abonnement silencieusement.
-      registerPushNotifications();
-    } else if (Notification.permission === 'default') {
-      // Pas encore répondu : on affiche un bouton, on ne prompt jamais tout seul.
-      setShowEnableNotifBanner(true);
+  const token = localStorage.getItem('token');
+  if (!token) return;
+
+  let reconnectAttempts = 0;
+  let reconnectTimer = null;
+  let closedByUs = false;
+
+  const connect = () => {
+    const ws = new WebSocket(`${WS_BASE_URL}/messages/ws?token=${token}`);
+    wsRef.current = ws;
+
+    ws.onopen = () => {
+      setWsConnected(true);
+      reconnectAttempts = 0; // on repart de zéro une fois reconnecté
+    };
+
+    ws.onclose = () => {
+      setWsConnected(false);
+      if (closedByUs) return;
+      // Backoff exponentiel plafonné à 30s : 1s, 2s, 4s, 8s, 16s, 30s, 30s...
+      const delay = Math.min(30000, 1000 * Math.pow(2, reconnectAttempts));
+      reconnectAttempts += 1;
+      reconnectTimer = setTimeout(connect, delay);
+    };
+
+    ws.onerror = () => ws.close(); // déclenche onclose -> logique de reconnexion
+
+    ws.onmessage = (event) => {
+      // ... garder tout le contenu existant de ws.onmessage tel quel ...
+    };
+  };
+
+  connect();
+
+  // Reconnexion immédiate quand l'onglet redevient visible/actif
+  // (utile après une mise en veille mobile prolongée)
+  const handleVisibility = () => {
+    if (!document.hidden && wsRef.current?.readyState !== WebSocket.OPEN) {
+      clearTimeout(reconnectTimer);
+      reconnectAttempts = 0;
+      connect();
     }
-  }, [currentUser?.id]);
+  };
+  document.addEventListener('visibilitychange', handleVisibility);
+
+  return () => {
+    closedByUs = true;
+    clearTimeout(reconnectTimer);
+    document.removeEventListener('visibilitychange', handleVisibility);
+    wsRef.current?.close();
+  };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+}, [currentUser?.id]);
 
   const isStaff = currentUser && ['ADMIN', 'COMMUNITY_MANAGER'].includes(currentUser.role);
 
