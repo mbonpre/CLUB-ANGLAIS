@@ -1,20 +1,32 @@
 import os
-from fastapi import APIRouter, File, UploadFile, HTTPException, Request
+import cloudinary
+import cloudinary.uploader
+from fastapi import APIRouter, File, UploadFile, HTTPException
 
 router = APIRouter(prefix="/upload", tags=["Upload"])
 
-UPLOAD_DIR = "uploads"
+# Configuration Cloudinary à partir des variables d'environnement définies sur Render
+# (CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, CLOUDINARY_API_SECRET).
+cloudinary.config(
+    cloud_name=os.getenv("CLOUDINARY_CLOUD_NAME"),
+    api_key=os.getenv("CLOUDINARY_API_KEY"),
+    api_secret=os.getenv("CLOUDINARY_API_SECRET"),
+    secure=True,
+)
 
 
 @router.post("/")
-def upload_file(request: Request, file: UploadFile = File(...)):
+def upload_file(file: UploadFile = File(...)):
     try:
-        os.makedirs(UPLOAD_DIR, exist_ok=True)
-        file_path = os.path.join(UPLOAD_DIR, file.filename)
-        with open(file_path, "wb") as buffer:
-            buffer.write(file.file.read())
-        # Construit l'URL à partir de la requête reçue (localhost en dev, domaine Render en prod)
-        base_url = str(request.base_url).rstrip("/")
-        return {"url": f"{base_url}/uploads/{file.filename}"}
+        # resource_type="auto" : Cloudinary détecte lui-même s'il s'agit d'une
+        # image, d'une vidéo ou d'un autre type de fichier (pdf, doc, etc.).
+        result = cloudinary.uploader.upload(
+            file.file,
+            resource_type="auto",
+            folder="club-anglais-uploads",
+        )
+        # "secure_url" est une URL permanente et publique (https://res.cloudinary.com/...)
+        # qui survit à tous les redéploiements du backend.
+        return {"url": result["secure_url"]}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
