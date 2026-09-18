@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { BrowserRouter } from 'react-router-dom';
 import Dashboard from './pages/Dashboard.jsx';
 
 export default function App() {
@@ -17,10 +18,12 @@ export default function App() {
   };
 
   return (
-    <Dashboard
-      isAuthenticated={isAuthenticated}
-      onLoginSuccess={() => setIsAuthenticated(true)}
-      onLogout={handleLogout}
-    />
+    <BrowserRouter>
+      <Dashboard
+        isAuthenticated={isAuthenticated}
+        onLoginSuccess={() => setIsAuthenticated(true)}
+        onLogout={handleLogout}
+      />
+    </BrowserRouter>
   );
 }
