@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import Members from './Members.jsx';
 import Projects from './Projects.jsx';
 import Chat from './Chat.jsx';
@@ -42,7 +43,16 @@ const getWordOfTheDay = () => {
 const hasCustomAvatar = (url) => !!url && url !== 'default.png';
 
 export default function Dashboard({ isAuthenticated, onLoginSuccess, onLogout }) {
-  const [currentPage, setCurrentPage] = useState('home');
+  // --- Navigation basée sur de vraies URLs (correctif) -----------------------
+  // Avant : `currentPage` était un simple état React (useState), jamais reflété
+  // dans l'URL -> un rechargement de page retombait toujours sur "home".
+  // Maintenant : la page active est dérivée de l'URL réelle (via react-router-dom),
+  // donc un rechargement (F5) reste sur la même section.
+  const navigate = useNavigate();
+  const location = useLocation();
+  const currentPage = location.pathname === '/' ? 'home' : location.pathname.slice(1);
+  const goTo = (page) => navigate(page === 'home' ? '/' : `/${page}`);
+
   const [activeTab, setActiveTab] = useState('official');
   const [currentUser, setCurrentUser] = useState(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -113,10 +123,10 @@ export default function Dashboard({ isAuthenticated, onLoginSuccess, onLogout })
       .catch(() => setPostCount(null));
   }, []);
 
-  const goToLogin = () => { setCurrentPage('login'); setMobileMenuOpen(false); };
-  const handleLoginSuccess = () => { onLoginSuccess(); setCurrentPage('home'); setMobileMenuOpen(false); };
-  const handleChatClick = () => { setCurrentPage(isAuthenticated ? 'chat' : 'login'); setMobileMenuOpen(false); };
-  const navigateTo = (page) => { setCurrentPage(page); setMobileMenuOpen(false); };
+  const goToLogin = () => { goTo('login'); setMobileMenuOpen(false); };
+  const handleLoginSuccess = () => { onLoginSuccess(); goTo('home'); setMobileMenuOpen(false); };
+  const handleChatClick = () => { goTo(isAuthenticated ? 'chat' : 'login'); setMobileMenuOpen(false); };
+  const navigateTo = (page) => { goTo(page); setMobileMenuOpen(false); };
 
   const navLinkClass = (page) => currentPage === page
     ? 'text-white border-b-2 border-red-500 pb-0.5 font-semibold'
