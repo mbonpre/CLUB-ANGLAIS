@@ -321,59 +321,16 @@ export default function ChatClubAnglais() {
   };
 
   useEffect(() => {
-  const token = localStorage.getItem('token');
-  if (!token) return;
-
-  let reconnectAttempts = 0;
-  let reconnectTimer = null;
-  let closedByUs = false;
-
-  const connect = () => {
-    const ws = new WebSocket(`${WS_BASE_URL}/messages/ws?token=${token}`);
-    wsRef.current = ws;
-
-    ws.onopen = () => {
-      setWsConnected(true);
-      reconnectAttempts = 0; // on repart de zéro une fois reconnecté
-    };
-
-    ws.onclose = () => {
-      setWsConnected(false);
-      if (closedByUs) return;
-      // Backoff exponentiel plafonné à 30s : 1s, 2s, 4s, 8s, 16s, 30s, 30s...
-      const delay = Math.min(30000, 1000 * Math.pow(2, reconnectAttempts));
-      reconnectAttempts += 1;
-      reconnectTimer = setTimeout(connect, delay);
-    };
-
-    ws.onerror = () => ws.close(); // déclenche onclose -> logique de reconnexion
-
-    ws.onmessage = (event) => {
-      // ... garder tout le contenu existant de ws.onmessage tel quel ...
-    };
-  };
-
-  connect();
-
-  // Reconnexion immédiate quand l'onglet redevient visible/actif
-  // (utile après une mise en veille mobile prolongée)
-  const handleVisibility = () => {
-    if (!document.hidden && wsRef.current?.readyState !== WebSocket.OPEN) {
-      clearTimeout(reconnectTimer);
-      reconnectAttempts = 0;
-      connect();
+    if (!currentUser?.id || typeof Notification === 'undefined') return;
+    if (Notification.permission === 'granted') {
+      // Déjà autorisé lors d'une session précédente : pas besoin de redemander,
+      // on (ré)enregistre juste l'abonnement silencieusement.
+      registerPushNotifications();
+    } else if (Notification.permission === 'default') {
+      // Pas encore répondu : on affiche un bouton, on ne prompt jamais tout seul.
+      setShowEnableNotifBanner(true);
     }
-  };
-  document.addEventListener('visibilitychange', handleVisibility);
-
-  return () => {
-    closedByUs = true;
-    clearTimeout(reconnectTimer);
-    document.removeEventListener('visibilitychange', handleVisibility);
-    wsRef.current?.close();
-  };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-}, [currentUser?.id]);
+  }, [currentUser?.id]);
 
   const isStaff = currentUser && ['ADMIN', 'COMMUNITY_MANAGER'].includes(currentUser.role);
 
@@ -395,101 +352,145 @@ export default function ChatClubAnglais() {
       .catch(() => {});
   };
 
+  // --- WebSocket avec reconnexion automatique (correctif) -------------------
+  // Avant : la connexion n'était jamais rétablie après une coupure (mise en
+  // veille mobile, changement de réseau, timeout serveur). Le seul recours
+  // était de rafraîchir la page à la main. Désormais : backoff exponentiel
+  // (1s, 2s, 4s... plafonné à 30s) + reconnexion immédiate quand l'onglet
+  // redevient visible.
   useEffect(() => {
     const token = localStorage.getItem('token');
     if (!token) return;
 
-    const ws = new WebSocket(`${WS_BASE_URL}/messages/ws?token=${token}`);
-    wsRef.current = ws;
+    let reconnectAttempts = 0;
+    let reconnectTimer = null;
+    let closedByUs = false;
 
-    ws.onopen = () => setWsConnected(true);
-    ws.onclose = () => setWsConnected(false);
-    ws.onerror = () => setWsConnected(false);
+    const connect = () => {
+      const ws = new WebSocket(`${WS_BASE_URL}/messages/ws?token=${token}`);
+      wsRef.current = ws;
 
-    ws.onmessage = (event) => {
-      const msg = JSON.parse(event.data);
+      ws.onopen = () => {
+        setWsConnected(true);
+        reconnectAttempts = 0; // on repart de zéro une fois reconnecté avec succès
+      };
 
-      // Notification de validation de compte (nécessite que le backend envoie
-      // {type: "account_validated", message: "..."} via le websocket — voir
-      // notify_account_validated() côté messages.py).
-      if (msg.type === 'account_validated') {
-        notify('Compte validé ✅', msg.message || 'Votre compte a été validé.', 'account');
-        return;
-      }
+      ws.onclose = () => {
+        setWsConnected(false);
+        if (closedByUs) return;
+        const delay = Math.min(30000, 1000 * Math.pow(2, reconnectAttempts));
+        reconnectAttempts += 1;
+        reconnectTimer = setTimeout(connect, delay);
+      };
 
-      if (msg.type === 'room_message') {
-        setRoomMessagesByRoom(prev => {
-          const existing = prev[msg.room_id] || [];
+      ws.onerror = () => {
+        setWsConnected(false);
+        ws.close(); // déclenche onclose ci-dessus -> logique de reconnexion
+      };
+
+      ws.onmessage = (event) => {
+        const msg = JSON.parse(event.data);
+
+        // Notification de validation de compte (nécessite que le backend envoie
+        // {type: "account_validated", message: "..."} via le websocket — voir
+        // notify_account_validated() côté messages.py).
+        if (msg.type === 'account_validated') {
+          notify('Compte validé ✅', msg.message || 'Votre compte a été validé.', 'account');
+          return;
+        }
+
+        if (msg.type === 'room_message') {
+          setRoomMessagesByRoom(prev => {
+            const existing = prev[msg.room_id] || [];
+            if (existing.some(m => m.id === msg.id)) return prev;
+            // On retire le message "optimiste" (affiché immédiatement à l'envoi)
+            // qui correspond à celui que le serveur vient de confirmer, pour éviter le doublon.
+            const withoutOptimistic = existing.filter(
+              m => !(m._optimistic && m.sender_id === (msg.sender?.id ?? msg.sender_id) && m.content === msg.content)
+            );
+            return { ...prev, [msg.room_id]: [...withoutOptimistic, msg] };
+          });
+
+          const isOpenAndFocused = activeRoomRef.current?.id === msg.room_id && !document.hidden;
+          setUnreadRoomIds(prev => {
+            if (isOpenAndFocused) return prev;
+            const next = new Set(prev); next.add(msg.room_id); return next;
+          });
+
+          if (msg.sender?.id !== currentUser?.id && !isOpenAndFocused) {
+            const roomName = roomsRef.current.find(r => r.id === msg.room_id)?.name || 'Salon';
+            notify(`#${roomName}`, `${msg.sender?.full_name || 'Membre'} : ${msg.content || '📎 Pièce jointe'}`, chatKey('room', msg.room_id));
+          }
+
+          fetchRooms();
+          return;
+        }
+
+        if (msg.type === 'reaction_update') {
+          setMessagesByContact(prev => {
+            const updated = {};
+            for (const [cid, msgs] of Object.entries(prev)) {
+              updated[cid] = msgs.map(m => m.id === msg.id ? { ...m, reactions: msg.reactions } : m);
+            }
+            return updated;
+          });
+          return;
+        }
+
+        if (msg.deleted_id) {
+          setMessagesByContact(prev => {
+            const updated = {};
+            for (const [contactId, msgs] of Object.entries(prev)) {
+              updated[contactId] = msgs.filter(m => m.id !== msg.deleted_id);
+            }
+            return updated;
+          });
+          return;
+        }
+
+        const otherId = msg.sender_id === currentUser?.id ? msg.receiver_id : msg.sender_id;
+
+        setMessagesByContact(prev => {
+          const existing = prev[otherId] || [];
+          if (msg.edited) {
+            return { ...prev, [otherId]: existing.map(m => m.id === msg.id ? msg : m) };
+          }
           if (existing.some(m => m.id === msg.id)) return prev;
-          // On retire le message "optimiste" (affiché immédiatement à l'envoi)
-          // qui correspond à celui que le serveur vient de confirmer, pour éviter le doublon.
+          // Idem en messages privés : on remplace le message optimiste par la version confirmée du serveur.
           const withoutOptimistic = existing.filter(
-            m => !(m._optimistic && m.sender_id === (msg.sender?.id ?? msg.sender_id) && m.content === msg.content)
+            m => !(m._optimistic && m.sender_id === msg.sender_id && m.content === msg.content)
           );
-          return { ...prev, [msg.room_id]: [...withoutOptimistic, msg] };
+          return { ...prev, [otherId]: [...withoutOptimistic, msg] };
         });
 
-        const isOpenAndFocused = activeRoomRef.current?.id === msg.room_id && !document.hidden;
-        setUnreadRoomIds(prev => {
-          if (isOpenAndFocused) return prev;
-          const next = new Set(prev); next.add(msg.room_id); return next;
-        });
-
-        if (msg.sender?.id !== currentUser?.id && !isOpenAndFocused) {
-          const roomName = roomsRef.current.find(r => r.id === msg.room_id)?.name || 'Salon';
-          notify(`#${roomName}`, `${msg.sender?.full_name || 'Membre'} : ${msg.content || '📎 Pièce jointe'}`, chatKey('room', msg.room_id));
+        const isPrivateOpenAndFocused = activeContactRef.current?.id === otherId && !document.hidden;
+        if (msg.sender_id !== currentUser?.id && !msg.edited && !isPrivateOpenAndFocused) {
+          notify(resolveSenderName(msg.sender_id), msg.content || '📎 Pièce jointe', chatKey('contact', otherId));
         }
 
-        fetchRooms();
-        return;
-      }
-
-      if (msg.type === 'reaction_update') {
-        setMessagesByContact(prev => {
-          const updated = {};
-          for (const [cid, msgs] of Object.entries(prev)) {
-            updated[cid] = msgs.map(m => m.id === msg.id ? { ...m, reactions: msg.reactions } : m);
-          }
-          return updated;
-        });
-        return;
-      }
-
-      if (msg.deleted_id) {
-        setMessagesByContact(prev => {
-          const updated = {};
-          for (const [contactId, msgs] of Object.entries(prev)) {
-            updated[contactId] = msgs.filter(m => m.id !== msg.deleted_id);
-          }
-          return updated;
-        });
-        return;
-      }
-
-      const otherId = msg.sender_id === currentUser?.id ? msg.receiver_id : msg.sender_id;
-
-      setMessagesByContact(prev => {
-        const existing = prev[otherId] || [];
-        if (msg.edited) {
-          return { ...prev, [otherId]: existing.map(m => m.id === msg.id ? msg : m) };
-        }
-        if (existing.some(m => m.id === msg.id)) return prev;
-        // Idem en messages privés : on remplace le message optimiste par la version confirmée du serveur.
-        const withoutOptimistic = existing.filter(
-          m => !(m._optimistic && m.sender_id === msg.sender_id && m.content === msg.content)
-        );
-        return { ...prev, [otherId]: [...withoutOptimistic, msg] };
-      });
-
-      const isPrivateOpenAndFocused = activeContactRef.current?.id === otherId && !document.hidden;
-      if (msg.sender_id !== currentUser?.id && !msg.edited && !isPrivateOpenAndFocused) {
-        notify(resolveSenderName(msg.sender_id), msg.content || '📎 Pièce jointe', chatKey('contact', otherId));
-      }
-
-      refreshConversationPreviews();
+        refreshConversationPreviews();
+      };
     };
 
-    return () => ws.close();
+    connect();
+
+    // Reconnexion immédiate quand l'onglet redevient visible/actif (utile
+    // après une mise en veille mobile prolongée, sans attendre le backoff).
+    const handleVisibility = () => {
+      if (!document.hidden && wsRef.current?.readyState !== WebSocket.OPEN) {
+        clearTimeout(reconnectTimer);
+        reconnectAttempts = 0;
+        connect();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+
+    return () => {
+      closedByUs = true;
+      clearTimeout(reconnectTimer);
+      document.removeEventListener('visibilitychange', handleVisibility);
+      wsRef.current?.close();
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentUser?.id]);
 
