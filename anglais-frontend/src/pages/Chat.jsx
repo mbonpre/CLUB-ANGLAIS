@@ -1,4 +1,9 @@
 import React, { useState, useRef, useEffect } from 'react';
+import {
+  Moon, Sun, Bell, BellOff, X, Send, Paperclip, Smile, Sparkles,
+  Loader2, Pencil, Trash2, ArrowLeft, CornerUpLeft, Image as ImageIcon,
+  FileText, MessageCircle, Megaphone, Lock, Languages, ChevronDown,
+} from 'lucide-react';
 import { API_BASE_URL, WS_BASE_URL } from '../config';
 const EN_WORDS = [
   'hello', 'hi', 'how', 'are', 'you', 'today', 'thank', 'thanks', 'please', 'yes', 'no',
@@ -77,6 +82,7 @@ const isEmojiOnly = (text) => {
 };
 
 // Emojis de réaction rapide façon WhatsApp, affichés au-dessus de la bulle lors d'un appui long.
+// (Contenu envoyé par l'utilisateur — reste en emoji, pas une icône d'interface.)
 const QUICK_REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '🙏'];
 
 // Distance de swipe (px) à partir de laquelle on déclenche la réponse, et distance max de suivi du doigt.
@@ -122,12 +128,9 @@ export default function ChatClubAnglais() {
   const [forwardModalMsg, setForwardModalMsg] = useState(null);
   const [forwardSearch, setForwardSearch] = useState('');
 
-  // --- Réaction rapide façon WhatsApp (appui long) ---
   const [reactionBarMsgId, setReactionBarMsgId] = useState(null);
-  // --- Swipe pour répondre façon WhatsApp (glissement vers la droite) ---
   const [swipeOffsets, setSwipeOffsets] = useState({});
 
-  // --- Notifications / sourdine (nouveau) ---
   const [mutedChats, setMutedChats] = useState(() => {
     try { return new Set(JSON.parse(localStorage.getItem('mutedChats') || '[]')); } catch { return new Set(); }
   });
@@ -141,12 +144,8 @@ export default function ChatClubAnglais() {
   const messagesEndRef = useRef(null);
   const longPressTimerRef = useRef(null);
 
-  // Suivi du geste en cours (swipe / appui long), par référence pour rester à jour
-  // pendant les callbacks touch sans re-render intempestif.
-  const gestureRef = useRef({ id: null, startX: 0, startY: 0, mode: null }); // mode: 'pending' | 'swipe' | 'longpress-fired'
+  const gestureRef = useRef({ id: null, startX: 0, startY: 0, mode: null });
 
-  // Refs "miroir" pour éviter les closures obsolètes dans le handler websocket
-  // (qui n'est (re)créé qu'au changement de currentUser.id).
   const mutedChatsRef = useRef(mutedChats);
   const activeContactRef = useRef(null);
   const activeRoomRef = useRef(null);
@@ -178,7 +177,6 @@ export default function ChatClubAnglais() {
     });
   };
 
-  // Petit bip généré (pas besoin de fichier audio) pour les nouveaux messages
   const playBeep = () => {
     try {
       const ctx = new (window.AudioContext || window.webkitAudioContext)();
@@ -264,15 +262,6 @@ export default function ChatClubAnglais() {
     setupPush();
   }, [currentUser]);
 
-  // --- Notifications push (nouveau) : fonctionnent même app/onglet fermé(e) ---
-  // (contrairement au bip + Notification() du websocket, qui exigent que l'app
-  // tourne encore en arrière-plan). Nécessite qu'un Service Worker (public/sw.js)
-  // soit servi à la racine du site.
-  //
-  // IMPORTANT : Firefox (contrairement à Chrome) refuse d'appeler
-  // Notification.requestPermission() automatiquement au chargement de la page —
-  // ça doit venir d'un clic direct de l'utilisateur. D'où le bouton ci-dessous
-  // plutôt qu'un appel dans un useEffect au montage.
   const [showEnableNotifBanner, setShowEnableNotifBanner] = useState(false);
 
   const urlBase64ToUint8Array = (base64String) => {
@@ -288,7 +277,7 @@ export default function ChatClubAnglais() {
       const registration = await navigator.serviceWorker.register('/sw.js');
 
       const keyRes = await fetch(`${API_BASE_URL}/messages/push/public-key`);
-      if (!keyRes.ok) return; // VAPID pas encore configurée côté serveur
+      if (!keyRes.ok) return;
       const { publicKey } = await keyRes.json();
 
       let subscription = await registration.pushManager.getSubscription();
@@ -309,8 +298,6 @@ export default function ChatClubAnglais() {
     }
   };
 
-  // Appelée UNIQUEMENT depuis le onClick du bouton "Activer les notifications" :
-  // c'est ce lien direct avec le clic qui satisfait l'exigence de Firefox.
   const handleEnableNotifications = async () => {
     if (typeof Notification === 'undefined') return;
     const result = await Notification.requestPermission().catch(() => 'denied');
@@ -323,11 +310,8 @@ export default function ChatClubAnglais() {
   useEffect(() => {
     if (!currentUser?.id || typeof Notification === 'undefined') return;
     if (Notification.permission === 'granted') {
-      // Déjà autorisé lors d'une session précédente : pas besoin de redemander,
-      // on (ré)enregistre juste l'abonnement silencieusement.
       registerPushNotifications();
     } else if (Notification.permission === 'default') {
-      // Pas encore répondu : on affiche un bouton, on ne prompt jamais tout seul.
       setShowEnableNotifBanner(true);
     }
   }, [currentUser?.id]);
@@ -352,12 +336,6 @@ export default function ChatClubAnglais() {
       .catch(() => {});
   };
 
-  // --- WebSocket avec reconnexion automatique (correctif) -------------------
-  // Avant : la connexion n'était jamais rétablie après une coupure (mise en
-  // veille mobile, changement de réseau, timeout serveur). Le seul recours
-  // était de rafraîchir la page à la main. Désormais : backoff exponentiel
-  // (1s, 2s, 4s... plafonné à 30s) + reconnexion immédiate quand l'onglet
-  // redevient visible.
   useEffect(() => {
     const token = localStorage.getItem('token');
     if (!token) return;
@@ -372,7 +350,7 @@ export default function ChatClubAnglais() {
 
       ws.onopen = () => {
         setWsConnected(true);
-        reconnectAttempts = 0; // on repart de zéro une fois reconnecté avec succès
+        reconnectAttempts = 0;
       };
 
       ws.onclose = () => {
@@ -385,15 +363,12 @@ export default function ChatClubAnglais() {
 
       ws.onerror = () => {
         setWsConnected(false);
-        ws.close(); // déclenche onclose ci-dessus -> logique de reconnexion
+        ws.close();
       };
 
       ws.onmessage = (event) => {
         const msg = JSON.parse(event.data);
 
-        // Notification de validation de compte (nécessite que le backend envoie
-        // {type: "account_validated", message: "..."} via le websocket — voir
-        // notify_account_validated() côté messages.py).
         if (msg.type === 'account_validated') {
           notify('Compte validé ✅', msg.message || 'Votre compte a été validé.', 'account');
           return;
@@ -403,8 +378,6 @@ export default function ChatClubAnglais() {
           setRoomMessagesByRoom(prev => {
             const existing = prev[msg.room_id] || [];
             if (existing.some(m => m.id === msg.id)) return prev;
-            // On retire le message "optimiste" (affiché immédiatement à l'envoi)
-            // qui correspond à celui que le serveur vient de confirmer, pour éviter le doublon.
             const withoutOptimistic = existing.filter(
               m => !(m._optimistic && m.sender_id === (msg.sender?.id ?? msg.sender_id) && m.content === msg.content)
             );
@@ -456,7 +429,6 @@ export default function ChatClubAnglais() {
             return { ...prev, [otherId]: existing.map(m => m.id === msg.id ? msg : m) };
           }
           if (existing.some(m => m.id === msg.id)) return prev;
-          // Idem en messages privés : on remplace le message optimiste par la version confirmée du serveur.
           const withoutOptimistic = existing.filter(
             m => !(m._optimistic && m.sender_id === msg.sender_id && m.content === msg.content)
           );
@@ -474,8 +446,6 @@ export default function ChatClubAnglais() {
 
     connect();
 
-    // Reconnexion immédiate quand l'onglet redevient visible/actif (utile
-    // après une mise en veille mobile prolongée, sans attendre le backoff).
     const handleVisibility = () => {
       if (!document.hidden && wsRef.current?.readyState !== WebSocket.OPEN) {
         clearTimeout(reconnectTimer);
@@ -494,14 +464,10 @@ export default function ChatClubAnglais() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentUser?.id]);
 
-  // Défilement auto vers le bas : conversation privée, salon, ou changement de conversation/salon actif.
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [currentMessages.length, activeRoomMessages.length, activeContact?.id, activeRoom?.id]);
 
-  // Correction du bug de scroll mobile : quand le clavier virtuel s'ouvre/se ferme
-  // (au clic sur le champ de saisie), la fenêtre visible change de taille sans que
-  // la mise en page ne se recalcule toujours correctement -> on force un recalage.
   useEffect(() => {
     const scrollToBottom = () => messagesEndRef.current?.scrollIntoView({ behavior: 'auto' });
     const vv = window.visualViewport;
@@ -552,10 +518,6 @@ export default function ChatClubAnglais() {
     }
   };
 
-  // Envoi optimiste : le message apparaît immédiatement dans notre propre fenêtre,
-  // sans attendre que le serveur nous le renvoie via le websocket. Il est marqué
-  // "_optimistic" et sera silencieusement remplacé par la version confirmée du
-  // serveur dès qu'elle arrive (voir ws.onmessage ci-dessus).
   const handleSendMessage = (e) => {
     e.preventDefault();
     if (!inputText.trim()) return;
@@ -846,9 +808,6 @@ export default function ChatClubAnglais() {
 
   const scrollToBottomSoon = () => setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 300);
 
-  // --- Gestes façon WhatsApp : glissement vers la droite = répondre, appui long = réactions rapides ---
-  // Un seul jeu de handlers, réutilisé pour les messages privés et les messages de salon.
-
   const handleGestureStart = (msg, clientX, clientY) => {
     gestureRef.current = { id: msg.id, startX: clientX, startY: clientY, mode: 'pending' };
     longPressTimerRef.current = setTimeout(() => {
@@ -866,10 +825,8 @@ export default function ChatClubAnglais() {
     const dx = clientX - g.startX;
     const dy = clientY - g.startY;
 
-    // Mouvement franc (dans n'importe quel sens) : on annule l'appui long.
     if (g.mode === 'pending' && (Math.abs(dx) > 10 || Math.abs(dy) > 10)) {
       clearTimeout(longPressTimerRef.current);
-      // On ne bascule en mode "swipe" que si le geste est surtout horizontal et vers la droite.
       if (dx > 10 && Math.abs(dx) > Math.abs(dy)) {
         g.mode = 'swipe';
       } else {
@@ -916,7 +873,6 @@ export default function ChatClubAnglais() {
     setReactionBarMsgId(null);
   };
 
-  // Barre flottante de réactions rapides, affichée au-dessus de la bulle lors d'un appui long.
   const QuickReactionBar = ({ msg, isMe }) => (
     <div
       ref={reactionBarRef}
@@ -956,7 +912,7 @@ export default function ChatClubAnglais() {
           <p className="truncate text-slate-500">{target.content || '📎 Pièce jointe'}</p>
         </div>
       </div>
-      <button onClick={() => setReplyingTo(null)} className="font-bold hover:opacity-75 shrink-0 ml-2">✕</button>
+      <button onClick={() => setReplyingTo(null)} className="font-bold hover:opacity-75 shrink-0 ml-2"><X size={14} /></button>
     </div>
   ) : null;
 
@@ -974,19 +930,22 @@ export default function ChatClubAnglais() {
         <div className="px-4 py-3 flex justify-between items-center bg-[#1E3A8A] border-b-2 border-red-600">
           <div>
             <h2 className="font-bold text-lg text-white">Messagerie</h2>
-            <p className="text-[10px] text-slate-400">{wsConnected ? '🟢 Connecté en temps réel' : '🔴 Connexion en cours...'}</p>
+            <p className="text-[10px] text-slate-400 flex items-center gap-1">
+              <span className={`w-1.5 h-1.5 rounded-full ${wsConnected ? 'bg-emerald-400' : 'bg-red-400'}`}></span>
+              {wsConnected ? 'Connecté en temps réel' : 'Connexion en cours...'}
+            </p>
           </div>
-          <button onClick={() => setDarkMode(!darkMode)} className="p-2 rounded-xl text-sm text-white/80 hover:text-white transition">
-            {darkMode ? '☀️' : '🌙'}
+          <button onClick={() => setDarkMode(!darkMode)} className="p-2 rounded-xl text-white/80 hover:text-white transition">
+            {darkMode ? <Sun size={16} /> : <Moon size={16} />}
           </button>
         </div>
 
         {showEnableNotifBanner && (
           <div className={`px-4 py-2.5 flex items-center justify-between gap-2 border-b ${darkMode ? 'bg-[#1D4ED8] border-slate-700' : 'bg-amber-50 border-amber-200'}`}>
-            <p className="text-xs font-medium">🔔 Active les notifications pour ne rater aucun message.</p>
+            <p className="text-xs font-medium flex items-center gap-1.5"><Bell size={14} /> Active les notifications pour ne rater aucun message.</p>
             <div className="flex items-center gap-2 shrink-0">
               <button onClick={handleEnableNotifications} className="text-xs font-bold bg-red-600 hover:bg-red-700 text-white px-2.5 py-1 rounded-full">Activer</button>
-              <button onClick={() => setShowEnableNotifBanner(false)} className="text-xs text-slate-400 hover:text-slate-600">✕</button>
+              <button onClick={() => setShowEnableNotifBanner(false)} className="text-slate-400 hover:text-slate-600"><X size={14} /></button>
             </div>
           </div>
         )}
@@ -994,15 +953,15 @@ export default function ChatClubAnglais() {
         <div className={`flex border-b ${darkMode ? 'border-[#3B5FCC]' : 'border-[#EFF6FF]'}`}>
           <button
             onClick={() => setChatMode('private')}
-            className={`flex-1 py-2 text-xs font-bold transition ${chatMode === 'private' ? 'bg-red-600 text-white' : (darkMode ? 'text-slate-400 hover:bg-[#1E3A8A]' : 'text-slate-500 hover:bg-white')}`}
+            className={`flex-1 py-2 flex items-center justify-center gap-1.5 text-xs font-bold transition ${chatMode === 'private' ? 'bg-red-600 text-white' : (darkMode ? 'text-slate-400 hover:bg-[#1E3A8A]' : 'text-slate-500 hover:bg-white')}`}
           >
-            💬 Messages privés
+            <MessageCircle size={14} /> Messages privés
           </button>
           <button
             onClick={() => setChatMode('rooms')}
-            className={`flex-1 py-2 text-xs font-bold transition ${chatMode === 'rooms' ? 'bg-red-600 text-white' : (darkMode ? 'text-slate-400 hover:bg-[#1E3A8A]' : 'text-slate-500 hover:bg-white')}`}
+            className={`flex-1 py-2 flex items-center justify-center gap-1.5 text-xs font-bold transition ${chatMode === 'rooms' ? 'bg-red-600 text-white' : (darkMode ? 'text-slate-400 hover:bg-[#1E3A8A]' : 'text-slate-500 hover:bg-white')}`}
           >
-            📢 Salons
+            <Megaphone size={14} /> Salons
           </button>
         </div>
 
@@ -1069,7 +1028,7 @@ export default function ChatClubAnglais() {
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="flex justify-between items-baseline">
-                    <h4 className="text-sm font-semibold truncate">{room.name}{room.is_closed && ' 🔒'}</h4>
+                    <h4 className="text-sm font-semibold truncate flex items-center gap-1">{room.name}{room.is_closed && <Lock size={11} />}</h4>
                     <span className="text-[10px] text-slate-400 shrink-0">{room.member_count} membre(s)</span>
                   </div>
                   <p className="text-xs text-slate-400 truncate">{room.description || `${room.message_count} messages`}</p>
@@ -1095,7 +1054,7 @@ export default function ChatClubAnglais() {
           <div className={`w-full max-w-sm rounded-2xl shadow-2xl border p-5 ${darkMode ? 'bg-[#1E40AF] border-slate-700 text-white' : 'bg-white border-slate-200'}`}>
             <div className="flex justify-between items-center mb-4">
               <h3 className="font-bold text-sm">Créer un nouveau salon</h3>
-              <button onClick={() => setShowCreateRoom(false)} className="text-lg">✕</button>
+              <button onClick={() => setShowCreateRoom(false)}><X size={18} /></button>
             </div>
             <form onSubmit={handleCreateRoom} className="space-y-3">
               <input
@@ -1121,7 +1080,7 @@ export default function ChatClubAnglais() {
             </div>
           ) : activeRoom.is_pending ? (
             <div className="flex-1 flex items-center justify-center text-slate-400 text-sm">
-              ⏳ Demande envoyée — en attente d'approbation du créateur du salon.
+              Demande envoyée — en attente d'approbation du créateur du salon.
             </div>
           ) : !activeRoom.is_member ? (
             <div className="flex-1 flex flex-col items-center justify-center text-slate-400 text-sm gap-3">
@@ -1134,7 +1093,7 @@ export default function ChatClubAnglais() {
             <>
               <div className={`px-4 sm:px-6 py-4 border-b-2 flex items-center gap-3 justify-between ${darkMode ? 'bg-[#1E40AF]' : 'bg-white'}`} style={{ borderColor: activeRoom.color || '#DC2626' }}>
                 <div className="flex items-center gap-3 min-w-0">
-                  <button type="button" onClick={() => setActiveRoom(null)} className="sm:hidden text-xl -ml-1 mr-1">←</button>
+                  <button type="button" onClick={() => setActiveRoom(null)} className="sm:hidden -ml-1 mr-1"><ArrowLeft size={20} /></button>
                   <div className="w-10 h-10 rounded-full text-white flex items-center justify-center font-bold shadow-sm shrink-0" style={{ background: activeRoom.color || '#DC2626' }}>#</div>
                   <div className="min-w-0">
                     <h3 className="font-bold text-sm truncate">{activeRoom.name}</h3>
@@ -1142,8 +1101,8 @@ export default function ChatClubAnglais() {
                   </div>
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
-                  <button onClick={() => toggleMute('room', activeRoom.id)} title="Notifications" className="text-base">
-                    {isMuted('room', activeRoom.id) ? '🔕' : '🔔'}
+                  <button onClick={() => toggleMute('room', activeRoom.id)} title="Notifications">
+                    {isMuted('room', activeRoom.id) ? <BellOff size={16} /> : <Bell size={16} />}
                   </button>
                   {activeRoom.pending_count > 0 && (
                     <button onClick={() => { fetchPending(activeRoom.id); setShowPendingModal(true); }} className="text-xs bg-amber-100 text-amber-700 font-bold px-2.5 py-1 rounded-full">
@@ -1159,7 +1118,7 @@ export default function ChatClubAnglais() {
                   <div className={`w-full max-w-sm rounded-2xl shadow-2xl border p-5 ${darkMode ? 'bg-[#1E40AF] border-slate-700 text-white' : 'bg-white border-slate-200'}`}>
                     <div className="flex justify-between items-center mb-3">
                       <h3 className="font-bold text-sm">Demandes d'adhésion</h3>
-                      <button onClick={() => setShowPendingModal(false)}>✕</button>
+                      <button onClick={() => setShowPendingModal(false)}><X size={18} /></button>
                     </div>
                     {pendingRequests.length === 0 ? (
                       <p className="text-xs text-slate-400 italic">Aucune demande.</p>
@@ -1197,10 +1156,10 @@ export default function ChatClubAnglais() {
                         {!isMe && <span className="text-[10px] text-slate-400 ml-2 mb-0.5">{senderName}</span>}
                         {offset > 0 && (
                           <span
-                            className="absolute top-1/2 -translate-y-1/2 text-red-500 text-lg pointer-events-none"
+                            className="absolute top-1/2 -translate-y-1/2 text-red-500 pointer-events-none"
                             style={{ left: isMe ? undefined : 4, right: isMe ? 4 : undefined, opacity: Math.min(1, offset / SWIPE_TRIGGER_PX) }}
                           >
-                            ↩️
+                            <CornerUpLeft size={18} />
                           </span>
                         )}
                         <div
@@ -1234,14 +1193,14 @@ export default function ChatClubAnglais() {
                     ))}
                   </div>
                 )}
-                <button type="button" onClick={() => setShowStickerPicker(!showStickerPicker)} className="p-1.5 sm:p-2 rounded-xl text-base sm:text-lg hover:bg-slate-100/10 transition shrink-0">😊</button>
+                <button type="button" onClick={() => setShowStickerPicker(!showStickerPicker)} className="p-1.5 sm:p-2 rounded-xl hover:bg-slate-100/10 transition shrink-0"><Smile size={20} /></button>
                 <input
                   type="text" value={inputText} onChange={(e) => setInputText(e.target.value)}
                   onFocus={scrollToBottomSoon}
                   placeholder={`Écrire dans #${activeRoom.name}...`}
                   className={`flex-1 min-w-0 px-3 sm:px-4 py-2 sm:py-2.5 border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-red-500 ${darkMode ? 'bg-[#1D4ED8] border-slate-700 text-white' : 'bg-[#EFF6FF] border-slate-200'}`}
                 />
-                <button type="submit" disabled={!inputText.trim()} className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-red-600 hover:bg-red-700 text-white flex items-center justify-center shadow transition shrink-0 disabled:opacity-40">➔</button>
+                <button type="submit" disabled={!inputText.trim()} className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-red-600 hover:bg-red-700 text-white flex items-center justify-center shadow transition shrink-0 disabled:opacity-40"><Send size={16} /></button>
               </form>
             </>
           )
@@ -1253,15 +1212,15 @@ export default function ChatClubAnglais() {
           <>
             <div className={`px-4 sm:px-6 py-4 border-b-2 border-red-600 flex items-center gap-3 justify-between ${darkMode ? 'bg-[#1E40AF]' : 'bg-white'}`}>
               <div className="flex items-center gap-3 min-w-0">
-                <button type="button" onClick={() => setActiveContact(null)} className="sm:hidden text-xl -ml-1 mr-1">←</button>
+                <button type="button" onClick={() => setActiveContact(null)} className="sm:hidden -ml-1 mr-1"><ArrowLeft size={20} /></button>
                 <Avatar name={activeContact.full_name} imageUrl={activeContact.profile_image} className="w-10 h-10 text-sm" />
                 <div className="min-w-0">
                   <h3 className="font-bold text-sm truncate">{activeContact.full_name}</h3>
                   <p className="text-xs text-slate-400 truncate">{activeContact.english_level}</p>
                 </div>
               </div>
-              <button onClick={() => toggleMute('contact', activeContact.id)} title="Notifications" className="text-lg shrink-0">
-                {isMuted('contact', activeContact.id) ? '🔕' : '🔔'}
+              <button onClick={() => toggleMute('contact', activeContact.id)} title="Notifications" className="shrink-0">
+                {isMuted('contact', activeContact.id) ? <BellOff size={18} /> : <Bell size={18} />}
               </button>
             </div>
 
@@ -1285,10 +1244,10 @@ export default function ChatClubAnglais() {
                     <div key={msg.id} className={`flex flex-col group relative ${isMe ? 'items-end' : 'items-start'} ${selectedMsgForMenu === msg.id || reactionBarMsgId === msg.id ? 'z-50' : (translationsVisible[msg.id] !== undefined ? 'z-20' : 'z-10')}`}>
                       {offset > 0 && (
                         <span
-                          className="absolute top-1/2 -translate-y-1/2 text-red-500 text-lg pointer-events-none"
+                          className="absolute top-1/2 -translate-y-1/2 text-red-500 pointer-events-none"
                           style={{ left: isMe ? undefined : 4, right: isMe ? 4 : undefined, opacity: Math.min(1, offset / SWIPE_TRIGGER_PX) }}
                         >
-                          ↩️
+                          <CornerUpLeft size={18} />
                         </span>
                       )}
                       <div
@@ -1304,7 +1263,7 @@ export default function ChatClubAnglais() {
                             <img src={msg.media_url} alt={msg.content} className="rounded-lg mb-2 max-h-56 w-full object-cover" />
                           ) : (
                             <a href={msg.media_url} download className={`flex items-center gap-2 p-2 rounded-lg mb-2 text-xs font-medium ${isMe ? 'bg-white/10' : 'bg-black/5'}`}>
-                              📎 <span className="truncate">{msg.content || 'Fichier'}</span>
+                              <FileText size={14} /> <span className="truncate">{msg.content || 'Fichier'}</span>
                             </a>
                           )
                         )}
@@ -1331,34 +1290,34 @@ export default function ChatClubAnglais() {
                           </div>
                         )}
 
-                        {/* Seul le bouton de traduction reste ici — répondre passe par le glissement,
-                            réagir passe par l'appui long (barre de réactions rapides ci-dessus). */}
                         <div className={`flex items-center justify-between mt-2 pt-1 border-t text-[11px] gap-4 ${isMe ? 'border-white/20 text-red-100' : 'border-slate-700/20 text-slate-400'}`}>
                           <span>{msg._optimistic ? 'Envoi...' : formatTime(msg.created_at)}</span>
-                          <button type="button" onClick={() => basculerTraduction(msg)} disabled={isTranslating} className="hover:underline font-semibold disabled:opacity-50">🌐</button>
+                          <button type="button" onClick={() => basculerTraduction(msg)} disabled={isTranslating} className="hover:underline font-semibold disabled:opacity-50">
+                            <Languages size={14} />
+                          </button>
                         </div>
 
                         {isMe && (
                           <button
                             onClick={(e) => { e.stopPropagation(); setSelectedMsgForMenu(selectedMsgForMenu === msg.id ? null : msg.id); }}
-                            className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 transition p-1 text-xs bg-black/20 rounded text-white"
+                            className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 transition p-1 bg-black/20 rounded text-white"
                           >
-                            ▼
+                            <ChevronDown size={12} />
                           </button>
                         )}
 
                         {selectedMsgForMenu === msg.id && (
                           <div ref={menuRef} className={`absolute right-0 top-8 z-50 w-40 rounded-lg shadow-xl border py-1 text-xs ${darkMode ? 'bg-[#1D4ED8] border-slate-700 text-white' : 'bg-white border-slate-200 text-slate-800'}`}>
                             <button onClick={() => { setForwardModalMsg(msg); setSelectedMsgForMenu(null); }} className="w-full text-left px-4 py-2 hover:bg-red-500/10 flex items-center gap-2">
-                              <span>➔</span> Transférer
+                              <Send size={13} /> Transférer
                             </button>
                             {!msg.media_url && (
                               <button onClick={() => handleEditMessage(msg)} className="w-full text-left px-4 py-2 hover:bg-red-500/10 flex items-center gap-2">
-                                <span>✏️</span> Modifier
+                                <Pencil size={13} /> Modifier
                               </button>
                             )}
                             <button onClick={() => handleDeleteMessage(msg)} className="w-full text-left px-4 py-2 hover:bg-red-500/10 text-red-500 flex items-center gap-2">
-                              <span>🗑️</span> Supprimer
+                              <Trash2 size={13} /> Supprimer
                             </button>
                           </div>
                         )}
@@ -1389,7 +1348,7 @@ export default function ChatClubAnglais() {
                 <div className={`w-full max-w-sm rounded-2xl shadow-2xl border overflow-hidden flex flex-col max-h-[420px] ${darkMode ? 'bg-[#1E40AF] border-slate-700 text-white' : 'bg-white border-slate-200'}`}>
                   <div className="p-4 border-b border-slate-700/20 flex items-center justify-between">
                     <h3 className="font-bold text-sm">Transférer à...</h3>
-                    <button onClick={() => setForwardModalMsg(null)} className="text-lg">✕</button>
+                    <button onClick={() => setForwardModalMsg(null)}><X size={18} /></button>
                   </div>
                   <div className="p-3 border-b border-slate-700/20">
                     <input type="text" value={forwardSearch} onChange={(e) => setForwardSearch(e.target.value)} placeholder="Rechercher un membre..."
@@ -1409,8 +1368,8 @@ export default function ChatClubAnglais() {
 
             {editingMessageId && (
               <div className={`px-4 py-2 border-t flex items-center justify-between text-xs ${darkMode ? 'bg-[#1E40AF] border-slate-800' : 'bg-slate-100 border-slate-200'}`}>
-                <span className="font-bold text-red-500">✏️ Modification du message...</span>
-                <button onClick={() => { setEditingMessageId(null); setInputText(''); }} className="font-bold hover:opacity-75">✕</button>
+                <span className="font-bold text-red-500 flex items-center gap-1.5"><Pencil size={12} /> Modification du message...</span>
+                <button onClick={() => { setEditingMessageId(null); setInputText(''); }} className="font-bold hover:opacity-75"><X size={14} /></button>
               </div>
             )}
 
@@ -1426,35 +1385,33 @@ export default function ChatClubAnglais() {
               )}
               {showAttachMenu && (
                 <div ref={attachMenuRef} className={`absolute bottom-20 left-10 sm:left-12 z-50 rounded-2xl shadow-xl border py-3 px-2 flex flex-col gap-2 min-w-[180px] ${darkMode ? 'bg-[#1D4ED8] border-slate-700' : 'bg-white border-slate-200'}`}>
-                  <button type="button" onClick={() => fileInputRef.current.click()} className="flex items-center gap-3 px-4 py-2 text-xs rounded-xl hover:bg-red-500/10 font-medium">📷 Photo/Vidéo</button>
-                  <button type="button" onClick={() => docInputRef.current.click()} className="flex items-center gap-3 px-4 py-2 text-xs rounded-xl hover:bg-red-500/10 font-medium">📄 Document</button>
+                  <button type="button" onClick={() => fileInputRef.current.click()} className="flex items-center gap-3 px-4 py-2 text-xs rounded-xl hover:bg-red-500/10 font-medium"><ImageIcon size={15} /> Photo/Vidéo</button>
+                  <button type="button" onClick={() => docInputRef.current.click()} className="flex items-center gap-3 px-4 py-2 text-xs rounded-xl hover:bg-red-500/10 font-medium"><FileText size={15} /> Document</button>
 
-                  {/* Langue + correction : regroupées ici sur mobile pour libérer la barre de saisie */}
                   <div className="sm:hidden border-t border-slate-700/20 pt-2 mt-1 flex items-center justify-between px-2">
                     <div className="flex items-center rounded-lg overflow-hidden border text-xs font-semibold">
                       <button type="button" onClick={() => setDictLang('fr')} className={`px-2 py-1 ${dictLang === 'fr' ? 'bg-red-600 text-white' : 'text-slate-500'}`}>🇫🇷</button>
                       <button type="button" onClick={() => setDictLang('en')} className={`px-2 py-1 ${dictLang === 'en' ? 'bg-red-600 text-white' : 'text-slate-500'}`}>🇬🇧</button>
                     </div>
-                    <button type="button" onClick={() => { correctText(); setShowAttachMenu(false); }} disabled={isCorrecting} className="text-lg px-2 disabled:opacity-50">
-                      {isCorrecting ? '⏳' : '✨'}
+                    <button type="button" onClick={() => { correctText(); setShowAttachMenu(false); }} disabled={isCorrecting} className="px-2 disabled:opacity-50">
+                      {isCorrecting ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />}
                     </button>
                   </div>
                 </div>
               )}
 
               <div className="flex items-center gap-0.5 sm:gap-1 shrink-0">
-                <button type="button" onClick={() => setShowStickerPicker(!showStickerPicker)} className="p-1.5 sm:p-2 rounded-xl text-base sm:text-lg hover:bg-slate-100/10 transition">😊</button>
-                <button type="button" onClick={() => setShowAttachMenu(!showAttachMenu)} disabled={uploadingFile} className="p-1.5 sm:p-2 rounded-xl text-base sm:text-lg hover:bg-slate-100/10 transition disabled:opacity-50">
-                  {uploadingFile ? '⏳' : '📎'}
+                <button type="button" onClick={() => setShowStickerPicker(!showStickerPicker)} className="p-1.5 sm:p-2 rounded-xl hover:bg-slate-100/10 transition"><Smile size={18} /></button>
+                <button type="button" onClick={() => setShowAttachMenu(!showAttachMenu)} disabled={uploadingFile} className="p-1.5 sm:p-2 rounded-xl hover:bg-slate-100/10 transition disabled:opacity-50">
+                  {uploadingFile ? <Loader2 size={18} className="animate-spin" /> : <Paperclip size={18} />}
                 </button>
 
-                {/* Langue + correction : visibles en ligne seulement à partir de sm (tablette/desktop) */}
                 <div className={`hidden sm:flex items-center rounded-lg overflow-hidden border text-xs font-semibold ${darkMode ? 'border-slate-700' : 'border-slate-200'}`}>
                   <button type="button" onClick={() => setDictLang('fr')} className={`px-2 py-1 ${dictLang === 'fr' ? 'bg-red-600 text-white' : 'text-slate-500'}`}>🇫🇷</button>
                   <button type="button" onClick={() => setDictLang('en')} className={`px-2 py-1 ${dictLang === 'en' ? 'bg-red-600 text-white' : 'text-slate-500'}`}>🇬🇧</button>
                 </div>
-                <button type="button" onClick={correctText} disabled={isCorrecting} className="hidden sm:inline-flex p-2 rounded-xl text-lg hover:bg-slate-100/10 transition disabled:opacity-50">
-                  {isCorrecting ? '⏳' : '✨'}
+                <button type="button" onClick={correctText} disabled={isCorrecting} className="hidden sm:inline-flex p-2 rounded-xl hover:bg-slate-100/10 transition disabled:opacity-50">
+                  {isCorrecting ? <Loader2 size={18} className="animate-spin" /> : <Sparkles size={18} />}
                 </button>
               </div>
 
@@ -1466,7 +1423,7 @@ export default function ChatClubAnglais() {
               />
 
               <button type="submit" disabled={!inputText.trim()} className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-red-600 hover:bg-red-700 text-white flex items-center justify-center shadow transition shrink-0 disabled:opacity-40">
-                ➔
+                <Send size={16} />
               </button>
             </form>
           </>

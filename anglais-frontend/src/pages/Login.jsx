@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Eye, EyeOff, Lock } from 'lucide-react';
 import { API_BASE_URL } from '../config';
 
 export default function Login({ onLoginSuccess }) {
@@ -97,10 +98,13 @@ export default function Login({ onLoginSuccess }) {
 
         {mode === 'forgot' && (
           <div className="space-y-4">
-            <div className="p-3 bg-blue-50 border border-blue-200 text-blue-800 text-sm rounded">
-              🔒 Pour des raisons de sécurité, la réinitialisation ne peut plus se faire seul en ligne.
-              Contacte un administrateur ou Community Manager du club — il pourra réinitialiser ton
-              mot de passe depuis son compte.
+            <div className="p-3 bg-blue-50 border border-blue-200 text-blue-800 text-sm rounded flex items-start gap-2">
+              <Lock size={16} className="shrink-0 mt-0.5" />
+              <span>
+                Pour des raisons de sécurité, la réinitialisation ne peut plus se faire seul en ligne.
+                Contacte un administrateur ou Community Manager du club — il pourra réinitialiser ton
+                mot de passe depuis son compte.
+              </span>
             </div>
             <button type="button" onClick={() => setMode('login')} className="w-full text-center text-sm text-slate-600 hover:underline">
               Retour à la connexion
@@ -121,6 +125,16 @@ export default function Login({ onLoginSuccess }) {
                 className="w-full p-2.5 border border-slate-200 rounded text-sm focus:outline-none focus:ring-2 focus:ring-red-500" required />
             </div>
             <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Section souhaitée</label>
+              <select value={reqSection} onChange={(e) => setReqSection(e.target.value)}
+                className="w-full p-2.5 border border-slate-200 rounded text-sm bg-white focus:outline-none focus:ring-2 focus:ring-red-500" required>
+                <option value="debate">Débat</option>
+                <option value="interpretation">Interprétation</option>
+                <option value="news">Actualités</option>
+                <option value="drama">Théâtre</option>
+              </select>
+            </div>
+            <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Choisis un mot de passe</label>
               <div className="relative">
                 <input
@@ -138,7 +152,7 @@ export default function Login({ onLoginSuccess }) {
                   aria-label={showReqPassword ? 'Masquer le mot de passe' : 'Afficher le mot de passe'}
                   tabIndex={-1}
                 >
-                  {showReqPassword ? '🙈' : '👁️'}
+                  {showReqPassword ? <EyeOff size={16} /> : <Eye size={16} />}
                 </button>
               </div>
               <p className="text-[11px] text-slate-400 mt-1">Utilisable seulement si ta demande est approuvée.</p>
@@ -197,7 +211,7 @@ export default function Login({ onLoginSuccess }) {
                   aria-label={showPassword ? 'Masquer le mot de passe' : 'Afficher le mot de passe'}
                   tabIndex={-1}
                 >
-                  {showPassword ? '🙈' : '👁️'}
+                  {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
                 </button>
               </div>
             </div>
