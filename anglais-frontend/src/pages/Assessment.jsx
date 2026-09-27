@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { BarChart3, ClipboardCheck } from 'lucide-react';
 import { API_BASE_URL } from '../config';
 
 export default function Assessment() {
@@ -45,7 +46,7 @@ export default function Assessment() {
   if (result) {
     return (
       <div className="max-w-lg mx-auto bg-white rounded-lg shadow-sm border border-slate-200 p-5 sm:p-8 text-center">
-        <p className="text-4xl mb-3">📊</p>
+        <BarChart3 className="mx-auto mb-3 text-slate-400" size={40} />
         <h2 className="text-lg sm:text-xl font-bold text-slate-900 mb-2">Résultat de ton test</h2>
         <p className="text-sm text-slate-500 mb-4">{result.score} / {result.total_questions} bonnes réponses</p>
         <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-4 mb-4">
@@ -62,7 +63,7 @@ export default function Assessment() {
   return (
     <div className="max-w-2xl mx-auto space-y-4 sm:space-y-6">
       <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-4 sm:p-6">
-        <h2 className="text-lg sm:text-xl font-bold text-slate-900 mb-1">📝 Test d'évaluation de niveau</h2>
+        <h2 className="text-lg sm:text-xl font-bold text-slate-900 mb-1 flex items-center gap-2"><ClipboardCheck size={20} /> Test d'évaluation de niveau</h2>
         <p className="text-sm text-slate-500">Réponds à ces {questions.length} questions. Le résultat sera d'abord calculé automatiquement, puis confirmé par un administrateur.</p>
       </div>
 

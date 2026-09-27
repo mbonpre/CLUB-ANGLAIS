@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { Crown, GraduationCap, Puzzle, Megaphone, Pencil, Trash2, AlertTriangle } from 'lucide-react';
 import { API_BASE_URL } from '../config';
 
 const authHeaders = () => ({
@@ -352,11 +353,11 @@ export default function AdminPanel() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail || "Erreur lors de l'envoi.");
-      setAnnounceFeedback('✅ Annonce publiée dans le flux officiel.');
+      setAnnounceFeedback('ok:Annonce publiée dans le flux officiel.');
       setAnnounceTitle('');
       setAnnounceContent('');
     } catch (err) {
-      setAnnounceFeedback(`⚠️ ${err.message}`);
+      setAnnounceFeedback(`err:${err.message}`);
     } finally {
       setAnnounceSubmitting(false);
     }
@@ -372,13 +373,24 @@ export default function AdminPanel() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail || "Erreur.");
-      setSaFeedback(`✅ ${data.message}`);
+      setSaFeedback(`ok:${data.message}`);
       setSaFullName(''); setSaEmail(''); setSaPassword('');
     } catch (err) {
-      setSaFeedback(`⚠️ ${err.message}`);
+      setSaFeedback(`err:${err.message}`);
     } finally {
       setSaSubmitting(false);
     }
+  };
+
+  const renderFeedback = (feedback) => {
+    if (!feedback) return null;
+    const isOk = feedback.startsWith('ok:');
+    const text = feedback.slice(feedback.indexOf(':') + 1);
+    return (
+      <p className={`text-xs mb-2 flex items-center gap-1.5 ${isOk ? 'text-emerald-600' : 'text-amber-600'}`}>
+        {!isOk && <AlertTriangle size={13} />} {text}
+      </p>
+    );
   };
 
   return (
@@ -402,8 +414,8 @@ export default function AdminPanel() {
         <div className="space-y-4 sm:space-y-6">
           {currentUser?.is_super_admin && (
             <div className="bg-white rounded-lg shadow-sm border border-purple-200 p-4 sm:p-5">
-              <h2 className="font-bold text-slate-900 mb-3">👑 Créer un nouveau Super Admin</h2>
-              {saFeedback && <p className="text-xs mb-2">{saFeedback}</p>}
+              <h2 className="font-bold text-slate-900 mb-3 flex items-center gap-2"><Crown size={18} className="text-purple-600" /> Créer un nouveau Super Admin</h2>
+              {renderFeedback(saFeedback)}
               <form onSubmit={handleCreateSuperAdmin} className="space-y-2">
                 <input type="text" placeholder="Nom complet" value={saFullName} onChange={(e) => setSaFullName(e.target.value)}
                   className="w-full p-2 border border-slate-200 rounded text-sm" required />
@@ -448,8 +460,8 @@ export default function AdminPanel() {
           </div>
 
           <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-4 sm:p-5">
-            <h2 className="font-bold text-slate-900 mb-3">
-              🎓 Évaluations de niveau à valider {pendingAssessments.length > 0 && <span className="text-red-600">({pendingAssessments.length})</span>}
+            <h2 className="font-bold text-slate-900 mb-3 flex items-center gap-2">
+              <GraduationCap size={18} /> Évaluations de niveau à valider {pendingAssessments.length > 0 && <span className="text-red-600">({pendingAssessments.length})</span>}
             </h2>
             {pendingAssessments.length === 0 ? (
               <p className="text-sm text-slate-400 italic">Aucune évaluation en attente.</p>
@@ -485,7 +497,7 @@ export default function AdminPanel() {
 
           <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-4 sm:p-5">
             <div className="flex flex-wrap justify-between items-center gap-2 mb-3">
-              <h2 className="font-bold text-slate-900">🧩 Questions du test de niveau ({questions.length})</h2>
+              <h2 className="font-bold text-slate-900 flex items-center gap-2"><Puzzle size={18} /> Questions du test de niveau ({questions.length})</h2>
               <button onClick={() => { resetQuestionForm(); setShowQuestionForm(true); }} className="bg-red-600 hover:bg-red-700 text-white text-xs font-bold px-3 py-1.5 rounded transition">+ Ajouter</button>
             </div>
 
@@ -528,8 +540,8 @@ export default function AdminPanel() {
                     </p>
                   </div>
                   <div className="flex gap-2 shrink-0">
-                    <button onClick={() => openEditQuestion(q)} className="text-xs bg-slate-100 hover:bg-slate-200 px-2 py-1 rounded">✏️</button>
-                    <button onClick={() => handleDeleteQuestion(q.id)} className="text-xs bg-red-50 hover:bg-red-100 text-red-600 px-2 py-1 rounded">🗑️</button>
+                    <button onClick={() => openEditQuestion(q)} className="text-xs bg-slate-100 hover:bg-slate-200 px-2 py-1 rounded"><Pencil size={13} /></button>
+                    <button onClick={() => handleDeleteQuestion(q.id)} className="text-xs bg-red-50 hover:bg-red-100 text-red-600 px-2 py-1 rounded"><Trash2 size={13} /></button>
                   </div>
                 </div>
               ))}
@@ -537,8 +549,8 @@ export default function AdminPanel() {
           </div>
 
           <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-4 sm:p-5">
-            <h2 className="font-bold text-slate-900 mb-3">📢 Envoyer une annonce officielle</h2>
-            {announceFeedback && <p className="text-xs mb-2">{announceFeedback}</p>}
+            <h2 className="font-bold text-slate-900 mb-3 flex items-center gap-2"><Megaphone size={18} /> Envoyer une annonce officielle</h2>
+            {renderFeedback(announceFeedback)}
             <form onSubmit={handleSendAnnouncement} className="space-y-2">
               <input type="text" placeholder="Titre de l'annonce" value={announceTitle} onChange={(e) => setAnnounceTitle(e.target.value)}
                 className="w-full p-2 border border-slate-200 rounded text-sm focus:outline-none focus:ring-2 focus:ring-red-500" required />
@@ -680,7 +692,7 @@ export default function AdminPanel() {
 
       {tab === 'stats' && (
         <div className="space-y-4 sm:space-y-6">
-          {statsError && <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded p-3">⚠️ {statsError}</p>}
+          {statsError && <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded p-3 flex items-center gap-2"><AlertTriangle size={15} /> {statsError}</p>}
 
           <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-4 sm:p-5">
             <h2 className="font-bold text-slate-900 mb-4">Répartition des niveaux d'anglais</h2>

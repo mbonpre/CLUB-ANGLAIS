@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { Pencil, Trash2, Languages, Heart, Lock } from 'lucide-react';
 import { API_BASE_URL } from '../config';
 
 const detectLanguage = (t) => /[àâäéèêëîïôöùûüç]|(?:\b(le|la|les|des|une|un|est|vous|je|nous|avec|bonjour|merci)\b)/i.test(t) ? 'fr' : 'en';
@@ -31,7 +32,7 @@ function CommentItem({ c, onLike }) {
         <div className="flex items-center gap-3 mt-0.5 ml-2 text-[10px] text-slate-400 font-semibold">
           <button onClick={like} className={liked ? 'text-red-600' : 'hover:underline'}>J'aime</button>
           <span>{timeAgo(c.created_at)}</span>
-          {count > 0 && <span>❤️ {count}</span>}
+          {count > 0 && <span className="flex items-center gap-0.5"><Heart size={10} className="fill-current" /> {count}</span>}
         </div>
       </div>
     </div>
@@ -226,7 +227,7 @@ export default function Posts({ activeTab, isAuthenticated, onRequestLogin }) {
         </div>
       ) : (
         <div className="bg-white p-6 rounded-lg shadow-sm border border-slate-200 text-center">
-          <p className="text-sm text-slate-600 mb-3">🔒 Connecte-toi pour publier.</p>
+          <p className="text-sm text-slate-600 mb-3 flex items-center justify-center gap-1.5"><Lock size={14} /> Connecte-toi pour publier.</p>
           <button onClick={onRequestLogin} className="bg-red-600 hover:bg-red-700 text-white font-bold px-5 py-2 rounded text-sm">Se connecter</button>
         </div>
       )}
@@ -261,11 +262,11 @@ export default function Posts({ activeTab, isAuthenticated, onRequestLogin }) {
                 {(isOwner || canDelete) && !isEditing && (
                   <div className="flex gap-1 shrink-0">
                     {isOwner && (
-                      <button onClick={() => startEditPost(post)} className="text-xs bg-slate-100 hover:bg-slate-200 px-2 py-1 rounded">✏️</button>
+                      <button onClick={() => startEditPost(post)} className="text-xs bg-slate-100 hover:bg-slate-200 px-2 py-1 rounded"><Pencil size={13} /></button>
                     )}
                     {canDelete && (
                       <button onClick={() => handleDeletePost(post)} disabled={deletingPostId === post.id} className="text-xs bg-red-50 hover:bg-red-100 text-red-600 px-2 py-1 rounded disabled:opacity-50">
-                        {deletingPostId === post.id ? '...' : '🗑️'}
+                        {deletingPostId === post.id ? '...' : <Trash2 size={13} />}
                       </button>
                     )}
                   </div>
@@ -299,18 +300,18 @@ export default function Posts({ activeTab, isAuthenticated, onRequestLogin }) {
               )}
 
               <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 border-t border-slate-100 pt-2 mb-2 text-xs">
-                <button onClick={() => handleTranslate(post.id, post.content)} disabled={isTranslating} className="text-red-600 font-semibold disabled:opacity-50">
-                  🌐 {isTranslating ? "..." : (trans?.isTranslated ? "Voir l'original" : label)}
+                <button onClick={() => handleTranslate(post.id, post.content)} disabled={isTranslating} className="text-red-600 font-semibold disabled:opacity-50 flex items-center gap-1">
+                  <Languages size={13} /> {isTranslating ? "..." : (trans?.isTranslated ? "Voir l'original" : label)}
                 </button>
                 <div className="flex items-center gap-3 text-slate-500">
-                  {post.likes_count > 0 && <span>❤️ {post.likes_count}</span>}
+                  {post.likes_count > 0 && <span className="flex items-center gap-1"><Heart size={12} className="fill-current text-red-500" /> {post.likes_count}</span>}
                   {comments.length > 0 && <button onClick={() => setExpandedComments(p => { const n=new Set(p); n.has(post.id)?n.delete(post.id):n.add(post.id); return n; })} className="hover:underline">{comments.length} commentaire(s)</button>}
                 </div>
               </div>
 
               <div className="flex border-t border-b border-slate-100 py-1 mb-2">
-                <button onClick={() => handleLike(post.id)} disabled={likingId === post.id} className={`flex-1 text-xs font-bold py-1.5 rounded hover:bg-slate-50 ${isLiked ? 'text-red-600' : 'text-slate-500'}`}>
-                  {isLiked ? '❤️ Aimé' : '🤍 J\'aime'}
+                <button onClick={() => handleLike(post.id)} disabled={likingId === post.id} className={`flex-1 text-xs font-bold py-1.5 rounded hover:bg-slate-50 flex items-center justify-center gap-1.5 ${isLiked ? 'text-red-600' : 'text-slate-500'}`}>
+                  <Heart size={14} className={isLiked ? 'fill-current' : ''} /> {isLiked ? 'Aimé' : "J'aime"}
                 </button>
               </div>
 
@@ -328,7 +329,7 @@ export default function Posts({ activeTab, isAuthenticated, onRequestLogin }) {
                   <button type="submit" disabled={submittingCommentId === post.id} className="shrink-0 text-red-600 text-xs font-bold px-2">{submittingCommentId === post.id ? '...' : 'Envoyer'}</button>
                 </form>
               ) : (
-                <button onClick={onRequestLogin} className="text-xs text-red-600 hover:underline">🔒 Connecte-toi pour commenter</button>
+                <button onClick={onRequestLogin} className="text-xs text-red-600 hover:underline flex items-center gap-1"><Lock size={11} /> Connecte-toi pour commenter</button>
               )}
             </div>
           );

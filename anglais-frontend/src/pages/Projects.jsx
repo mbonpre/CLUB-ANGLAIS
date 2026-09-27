@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { Target, Lock, CheckCircle2, AlertTriangle, X } from 'lucide-react';
 import { API_BASE_URL } from '../config';
 
 const timeAgo = (isoDate) => {
@@ -23,7 +24,7 @@ export default function Projects({ isAuthenticated, onRequestLogin }) {
   const [loadError, setLoadError] = useState('');
   const [activeTab, setActiveTab] = useState('all'); // 'all', 'collaborative', 'mission'
   const [applyingId, setApplyingId] = useState(null);
-  const [applyFeedback, setApplyFeedback] = useState({}); // { [projectId]: message }
+  const [applyFeedback, setApplyFeedback] = useState({}); // { [projectId]: { ok: bool, text: string } }
 
   // État pour la modale de création de projet
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -119,9 +120,9 @@ export default function Projects({ isAuthenticated, onRequestLogin }) {
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail || "Erreur lors de l'envoi de la candidature.");
 
-      setApplyFeedback(prev => ({ ...prev, [project.id]: '✅ Candidature envoyée avec succès.' }));
+      setApplyFeedback(prev => ({ ...prev, [project.id]: { ok: true, text: 'Candidature envoyée avec succès.' } }));
     } catch (err) {
-      setApplyFeedback(prev => ({ ...prev, [project.id]: `⚠️ ${err.message}` }));
+      setApplyFeedback(prev => ({ ...prev, [project.id]: { ok: false, text: err.message } }));
     } finally {
       setApplyingId(null);
     }
@@ -132,14 +133,14 @@ export default function Projects({ isAuthenticated, onRequestLogin }) {
       {/* En-tête du module + bouton de création */}
       <div className="bg-white p-4 sm:p-5 rounded-lg shadow-sm border border-slate-200 flex flex-col sm:flex-row justify-between sm:items-center gap-3">
         <div>
-          <h2 className="text-lg sm:text-xl font-bold text-slate-900">Conseil des Projets & Missions 🎯</h2>
+          <h2 className="text-lg sm:text-xl font-bold text-slate-900 flex items-center gap-2"><Target size={20} /> Conseil des Projets & Missions</h2>
           <p className="text-sm text-slate-500">Collaborez sur des projets et pratiquez l'anglais au quotidien.</p>
         </div>
         <button
           onClick={() => isAuthenticated ? setIsModalOpen(true) : onRequestLogin?.()}
-          className="w-full sm:w-auto shrink-0 bg-red-600 hover:bg-red-700 text-white font-bold text-sm px-4 py-2 rounded transition shadow-sm cursor-pointer"
+          className="w-full sm:w-auto shrink-0 bg-red-600 hover:bg-red-700 text-white font-bold text-sm px-4 py-2 rounded transition shadow-sm cursor-pointer flex items-center justify-center gap-1.5"
         >
-          {isAuthenticated ? '+ Publier un projet' : '🔒 Se connecter pour publier'}
+          {isAuthenticated ? '+ Publier un projet' : <><Lock size={14} /> Se connecter pour publier</>}
         </button>
       </div>
 
@@ -170,7 +171,7 @@ export default function Projects({ isAuthenticated, onRequestLogin }) {
         {loading ? (
           <p className="text-center text-slate-500 py-6">Chargement des projets...</p>
         ) : loadError ? (
-          <p className="text-center text-red-700 py-6 bg-red-50 border border-red-200 rounded-lg px-4">⚠️ {loadError}</p>
+          <p className="text-center text-red-700 py-6 bg-red-50 border border-red-200 rounded-lg px-4 flex items-center justify-center gap-2"><AlertTriangle size={16} /> {loadError}</p>
         ) : projects.length === 0 ? (
           <p className="text-center text-slate-500 py-6 bg-white p-6 rounded-lg border border-slate-200">
             Aucun projet trouvé dans cette catégorie.
@@ -205,15 +206,18 @@ export default function Projects({ isAuthenticated, onRequestLogin }) {
                   <button
                     onClick={() => isAuthenticated ? handleApply(project) : onRequestLogin?.()}
                     disabled={applyingId === project.id}
-                    className="w-full sm:w-auto bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold px-4 py-2 rounded transition cursor-pointer disabled:opacity-50"
+                    className="w-full sm:w-auto bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold px-4 py-2 rounded transition cursor-pointer disabled:opacity-50 flex items-center justify-center gap-1.5"
                   >
-                    {!isAuthenticated ? '🔒 Se connecter' : applyingId === project.id ? 'Envoi...' : 'Postuler / Répondre'}
+                    {!isAuthenticated ? <><Lock size={12} /> Se connecter</> : applyingId === project.id ? 'Envoi...' : 'Postuler / Répondre'}
                   </button>
                 </div>
               </div>
 
               {applyFeedback[project.id] && (
-                <p className="text-xs mt-2 text-right">{applyFeedback[project.id]}</p>
+                <p className={`text-xs mt-2 text-right flex items-center justify-end gap-1 ${applyFeedback[project.id].ok ? 'text-emerald-600' : 'text-amber-600'}`}>
+                  {applyFeedback[project.id].ok ? <CheckCircle2 size={13} /> : <AlertTriangle size={13} />}
+                  {applyFeedback[project.id].text}
+                </p>
               )}
             </div>
           ))
@@ -228,14 +232,14 @@ export default function Projects({ isAuthenticated, onRequestLogin }) {
               <h3 className="font-bold text-sm sm:text-base">Publier un nouveau projet ou mission</h3>
               <button
                 onClick={() => setIsModalOpen(false)}
-                className="text-slate-400 hover:text-white font-bold text-lg cursor-pointer shrink-0 ml-2"
+                className="text-slate-400 hover:text-white cursor-pointer shrink-0 ml-2"
               >
-                &times;
+                <X size={18} />
               </button>
             </div>
 
             <form onSubmit={handleCreateProject} className="p-4 sm:p-6 space-y-4 overflow-y-auto">
-              {error && <div className="p-3 bg-red-50 border border-red-200 text-red-600 text-xs rounded">{error}</div>}
+              {error && <div className="p-3 bg-red-50 border border-red-200 text-red-600 text-xs rounded flex items-center gap-2"><AlertTriangle size={14} /> {error}</div>}
 
               <div>
                 <label className="block text-xs font-bold uppercase text-slate-600 mb-1">Titre du projet</label>

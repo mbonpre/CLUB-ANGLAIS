@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { Users } from 'lucide-react';
 import { API_BASE_URL } from '../config';
 
 const hasCustomAvatar = (url) => !!url && url !== 'default.png';
@@ -61,7 +62,7 @@ export default function Members() {
     <div className="space-y-4 sm:space-y-6">
       <div className="bg-white p-4 sm:p-6 rounded-lg shadow-sm border border-slate-200 flex flex-col md:flex-row justify-between items-start md:items-center gap-3 sm:gap-4">
         <div>
-          <h2 className="text-lg sm:text-xl font-bold text-slate-900">Annuaire des Membres 👥</h2>
+          <h2 className="text-lg sm:text-xl font-bold text-slate-900 flex items-center gap-2"><Users size={20} /> Annuaire des Membres</h2>
           <p className="text-sm text-slate-500">Consultez la liste des membres et leurs niveaux d'anglais.</p>
         </div>
         <div className="flex gap-2 sm:gap-3 w-full md:w-auto">
