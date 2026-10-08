@@ -29,13 +29,29 @@ def _check_section_scope(current_user: User, section: str):
         raise HTTPException(status_code=403, detail="Vous ne pouvez gérer que les demandes de votre propre section.")
 
 
-# Route publique : n'importe quel visiteur peut soumettre une demande (aucun compte créé ici)
+# Route publique : n'importe quel visiteur peut soumettre une demande
+# (aucun compte créé ici)
 @router.post("/", response_model=AccountRequestResponse, status_code=status.HTTP_201_CREATED)
-def create_account_request(data: AccountRequestCreate, db: Session = Depends(get_db)):
+def create_account_request(
+    data: AccountRequestCreate,
+    db: Session = Depends(get_db)
+):
+    # Vérification de la section
     if data.section not in VALID_SECTIONS:
-        raise HTTPException(status_code=400, detail="Section invalide.")
+        raise HTTPException(
+            status_code=400,
+            detail="Section invalide."
+        )
+
+    # Vérification du nom : aucun chiffre autorisé
+    if any(char.isdigit() for char in data.full_name):
+        raise HTTPException(
+            status_code=400,
+            detail="Le nom ne doit pas contenir de chiffres."
+        )
 
     existing_user = db.query(User).filter(User.email == data.email).first()
+
     if existing_user:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -44,9 +60,13 @@ def create_account_request(data: AccountRequestCreate, db: Session = Depends(get
 
     existing_request = (
         db.query(AccountRequest)
-        .filter(AccountRequest.email == data.email, AccountRequest.status == RequestStatus.PENDING)
+        .filter(
+            AccountRequest.email == data.email,
+            AccountRequest.status == RequestStatus.PENDING
+        )
         .first()
     )
+
     if existing_request:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -60,11 +80,12 @@ def create_account_request(data: AccountRequestCreate, db: Session = Depends(get
         section=data.section,
         message=data.message,
     )
+
     db.add(new_request)
     db.commit()
     db.refresh(new_request)
-    return new_request
 
+    return new_request
 
 # Liste des demandes — réservée aux Admins/Community Managers, scopée par section
 @router.get("/", response_model=List[AccountRequestResponse])

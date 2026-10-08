@@ -1,16 +1,41 @@
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 from typing import List
+from jose import jwt
+
 from app.database import get_db
 from app.models.user import User, UserRole
 from app.schemas.user import UserResponse, ProfileUpdate, ProfileImageUpdate
-from app.services.auth_utils import get_current_user
+from app.services.auth_utils import get_current_user, SECRET_KEY, ALGORITHM
 
 router = APIRouter(prefix="/users", tags=["Gestion du Profil & Annuaire"])
+
+# Même schéma OAuth2 que get_current_user, mais sans erreur si aucun token n'est fourni
+# (l'annuaire reste consultable par les visiteurs non connectés).
+optional_oauth2 = OAuth2PasswordBearer(tokenUrl="auth/login", auto_error=False)
+
+
+def get_optional_user(
+    token: str | None = Depends(optional_oauth2),
+    db: Session = Depends(get_db),
+) -> User | None:
+    if not token:
+        return None
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        user_id = payload.get("sub")
+        if user_id is None:
+            return None
+        return db.query(User).filter(User.id == int(user_id)).first()
+    except Exception:
+        return None
+
 
 @router.get("/me", response_model=UserResponse)
 def read_user_me(current_user: User = Depends(get_current_user)):
     return current_user
+
 
 @router.put("/me", response_model=UserResponse)
 def update_user_me(
@@ -18,6 +43,13 @@ def update_user_me(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
+    if profile_data.full_name is not None:
+        cleaned_name = profile_data.full_name.strip()
+        if not cleaned_name:
+            raise HTTPException(status_code=400, detail="Le nom ne peut pas être vide.")
+        if any(char.isdigit() for char in cleaned_name):
+            raise HTTPException(status_code=400, detail="Le nom ne doit pas contenir de chiffres.")
+        current_user.full_name = cleaned_name
     if profile_data.bio is not None:
         current_user.bio = profile_data.bio
     if profile_data.skills is not None:
@@ -25,6 +57,7 @@ def update_user_me(
     db.commit()
     db.refresh(current_user)
     return current_user
+
 
 @router.patch("/me/profile-image", response_model=UserResponse)
 def update_profile_image(
@@ -36,6 +69,7 @@ def update_profile_image(
     db.commit()
     db.refresh(current_user)
     return current_user
+
 
 @router.put("/{user_id}/promote")
 def promote_user(
@@ -74,10 +108,38 @@ def promote_user(
         "user": user_to_update
     }
 
-# Route : Annuaire public des membres
-@router.get("/", response_model=List[UserResponse])
-def get_all_users(db: Session = Depends(get_db)):
-    return db.query(User).filter(User.is_active == True).all()
+
+def _enum_value(v):
+    return v.value if hasattr(v, "value") else v
+
+
+# Route : Annuaire des membres — l'email n'est renvoyé qu'au staff (Admin / Community Manager)
+@router.get("/")
+def get_all_users(
+    db: Session = Depends(get_db),
+    viewer: User | None = Depends(get_optional_user),
+):
+    is_staff = viewer is not None and viewer.role in [UserRole.ADMIN, UserRole.COMMUNITY_MANAGER]
+    users = db.query(User).filter(User.is_active == True).all()
+
+    result = []
+    for u in users:
+        item = {
+            "id": u.id,
+            "full_name": u.full_name,
+            "english_level": u.english_level,
+            "profile_image": u.profile_image,
+            "role": _enum_value(u.role),
+            "section": _enum_value(u.section) if u.section is not None else None,
+            "is_active": u.is_active,
+            "bio": u.bio,
+            "skills": u.skills,
+        }
+        if is_staff:
+            item["email"] = u.email
+        result.append(item)
+    return result
+
 
 # Nouvelle route : Modifier le niveau d'anglais d'un membre (Réservé Admin & Coach)
 @router.put("/{user_id}/level")

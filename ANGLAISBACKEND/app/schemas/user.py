@@ -30,6 +30,7 @@ class Token(BaseModel):
     token_type: str
 
 class ProfileUpdate(BaseModel):
+    full_name: str | None = None
     bio: Optional[str] = None
     skills: Optional[str] = None
 
