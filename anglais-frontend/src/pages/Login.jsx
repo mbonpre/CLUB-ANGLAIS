@@ -116,7 +116,10 @@ export default function Login({ onLoginSuccess }) {
           <form onSubmit={handleRequestAccount} className="space-y-4">
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Nom complet</label>
-              <input type="text" value={reqFullName} onChange={(e) => setReqFullName(e.target.value)}
+             <input type="text" value={reqFullName}
+                onChange={(e) => setReqFullName(e.target.value.replace(/[0-9]/g, ''))}
+                pattern="[^0-9]*"
+                title="Le nom ne doit pas contenir de chiffres"
                 className="w-full p-2.5 border border-slate-200 rounded text-sm focus:outline-none focus:ring-2 focus:ring-red-500" required />
             </div>
             <div>

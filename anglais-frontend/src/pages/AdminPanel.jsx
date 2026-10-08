@@ -142,7 +142,7 @@ export default function AdminPanel() {
   const fetchMembers = async () => {
     setLoadingMembers(true);
     try {
-      const res = await fetch(   `${API_BASE_URL}/users/`);
+      const res = await fetch(`${API_BASE_URL}/users/`, { headers: authHeaders() });
       const data = await res.json();
       setMembers(Array.isArray(data) ? data : []);
     } catch (err) {

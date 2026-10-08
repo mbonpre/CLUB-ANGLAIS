@@ -19,14 +19,16 @@ export default function Members() {
   const [editingId, setEditingId] = useState(null);
 
   useEffect(() => {
-    fetch(   `${API_BASE_URL}/users/`)
+    const token = localStorage.getItem('token');
+
+    // On envoie le token (s'il existe) pour que le backend renvoie les emails au staff uniquement
+    fetch(`${API_BASE_URL}/users/`, token ? { headers: { 'Authorization': `Bearer ${token}` } } : undefined)
       .then(r => r.json())
       .then(d => { if (Array.isArray(d)) setMembers(d); setLoading(false); })
       .catch(() => setLoading(false));
 
-    const token = localStorage.getItem('token');
     if (token) {
-      fetch(   `${API_BASE_URL}/auth/me`, { headers: { 'Authorization': `Bearer ${token}` } })
+      fetch(`${API_BASE_URL}/auth/me`, { headers: { 'Authorization': `Bearer ${token}` } })
         .then(r => r.ok ? r.json() : null)
         .then(u => setIsStaff(u && ['ADMIN', 'COMMUNITY_MANAGER'].includes(u.role)))
         .catch(() => setIsStaff(false));
@@ -53,7 +55,7 @@ export default function Members() {
   };
 
   const filteredMembers = members.filter(m => {
-    const matchesSearch = m.full_name?.toLowerCase().includes(search.toLowerCase()) || m.email?.toLowerCase().includes(search.toLowerCase());
+    const matchesSearch = m.full_name?.toLowerCase().includes(search.toLowerCase()) || (isStaff && m.email?.toLowerCase().includes(search.toLowerCase()));
     const matchesLevel = levelFilter ? m.english_level === levelFilter : true;
     return matchesSearch && matchesLevel;
   });
@@ -93,7 +95,7 @@ export default function Members() {
                   <div className="flex-1 min-w-0 flex justify-between items-start gap-2">
                     <div className="min-w-0">
                       <h3 className="font-bold text-slate-900 break-words leading-tight">{member.full_name || "Utilisateur"}</h3>
-                      <p className="text-xs text-slate-500 break-words">{member.email}</p>
+                      {isStaff && member.email && <p className="text-xs text-slate-500 break-words">{member.email}</p>}
                     </div>
                     <span className="shrink-0 text-xs font-semibold px-2.5 py-1 rounded-full bg-red-50 text-red-700 border border-red-100">{member.english_level || 'A1'}</span>
                   </div>

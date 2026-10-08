@@ -3,6 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import {
   MessageCircle, GraduationCap, Settings, MapPin, X, Menu, Home,
   Users, Rocket, Lock, BookOpen, Megaphone, Loader2, Phone, Mail,
+  Pencil, Check,
 } from 'lucide-react';
 import Members from './Members.jsx';
 import Projects from './Projects.jsx';
@@ -56,6 +57,12 @@ export default function Dashboard({ isAuthenticated, onLoginSuccess, onLogout })
   const [currentUser, setCurrentUser] = useState(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [uploadingPic, setUploadingPic] = useState(false);
+
+  // Modification du nom du compte
+  const [editingName, setEditingName] = useState(false);
+  const [nameInput, setNameInput] = useState('');
+  const [savingName, setSavingName] = useState(false);
+
   const isStaff = currentUser && ['ADMIN', 'COMMUNITY_MANAGER'].includes(currentUser.role);
 
   const authHeaders = () => ({ 'Authorization': `Bearer ${localStorage.getItem('token')}` });
@@ -104,6 +111,33 @@ export default function Dashboard({ isAuthenticated, onLoginSuccess, onLogout })
     } finally {
       setUploadingPic(false);
       e.target.value = '';
+    }
+  };
+
+  const startEditName = () => {
+    setNameInput(currentUser?.full_name || '');
+    setEditingName(true);
+  };
+
+  const handleSaveName = async () => {
+    const cleaned = nameInput.replace(/[0-9]/g, '').trim();
+    if (!cleaned) { alert('Le nom ne peut pas être vide.'); return; }
+    setSavingName(true);
+    try {
+      const res = await fetch(`${API_BASE_URL}/users/me`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify({ full_name: cleaned }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || "Erreur lors de la modification du nom.");
+      // On fusionne pour conserver des champs comme active_section
+      setCurrentUser((prev) => ({ ...prev, ...data }));
+      setEditingName(false);
+    } catch (err) {
+      alert(err.message);
+    } finally {
+      setSavingName(false);
     }
   };
 
@@ -306,7 +340,34 @@ export default function Dashboard({ isAuthenticated, onLoginSuccess, onLogout })
                       </label>
                       <input id="profile-pic-input" type="file" accept="image/*" className="hidden" onChange={handleImageChange} disabled={uploadingPic} />
                     </div>
-                    <h2 className="font-bold text-slate-900">{currentUser?.full_name || 'Chargement...'}</h2>
+
+                    {editingName ? (
+                      <div className="flex items-center gap-1.5 justify-center">
+                        <input
+                          type="text"
+                          value={nameInput}
+                          onChange={(e) => setNameInput(e.target.value.replace(/[0-9]/g, ''))}
+                          className="text-sm font-bold text-center border border-slate-300 rounded px-2 py-1 w-40 focus:outline-none focus:ring-2 focus:ring-red-500"
+                          autoFocus
+                        />
+                        <button onClick={handleSaveName} disabled={savingName} className="text-emerald-600 hover:text-emerald-700 disabled:opacity-50" aria-label="Enregistrer le nom">
+                          {savingName ? <Loader2 size={16} className="animate-spin" /> : <Check size={16} />}
+                        </button>
+                        <button onClick={() => setEditingName(false)} className="text-slate-400 hover:text-slate-600" aria-label="Annuler">
+                          <X size={16} />
+                        </button>
+                      </div>
+                    ) : (
+                      <h2 className="font-bold text-slate-900 flex items-center justify-center gap-1.5">
+                        {currentUser?.full_name || 'Chargement...'}
+                        {currentUser && (
+                          <button onClick={startEditName} className="text-slate-400 hover:text-red-600 transition" aria-label="Modifier mon nom">
+                            <Pencil size={13} />
+                          </button>
+                        )}
+                      </h2>
+                    )}
+
                     <p className="text-xs text-red-600 font-semibold uppercase mt-0.5">
                       {currentUser?.role === 'ADMIN' ? 'Super Admin' : currentUser?.role === 'COMMUNITY_MANAGER' ? 'Community Manager' : currentUser?.role === 'COACH' ? 'Coach' : 'Membre'}
                       {currentUser?.english_level && ` · ${currentUser.english_level}`}
