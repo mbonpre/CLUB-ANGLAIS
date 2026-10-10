@@ -63,7 +63,10 @@ const Avatar = ({ name, imageUrl, className = '' }) => (
 
 const formatTime = (iso) => {
   try {
-    return new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    if (!iso) return '';
+    const date = new Date(iso);
+    // Si la date reçue est en UTC brute et nécessite un ajustement ou pour forcer l'heure locale correcte :
+    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
   } catch { return ''; }
 };
 
@@ -1072,363 +1075,389 @@ export default function ChatClubAnglais() {
           </div>
         </div>
       )}
-      <div className={`${(activeContact || activeRoom) ? 'flex' : 'hidden'} sm:flex w-full sm:w-2/3 flex-col ${darkMode ? 'bg-[#1E3A8A]' : 'bg-white'}`}>
-        {chatMode === 'rooms' ? (
-          !activeRoom ? (
-            <div className="flex-1 flex items-center justify-center text-slate-400 text-sm">
-              Sélectionne un salon (ou rejoins-en un) pour démarrer.
+    <div className={`${(activeContact || activeRoom) ? 'flex' : 'hidden'} sm:flex w-full sm:w-2/3 flex-col ${darkMode ? 'bg-[#1E3A8A]' : 'bg-white'}`}>
+  {chatMode === 'rooms' ? (
+    !activeRoom ? (
+      <div className="flex-1 flex items-center justify-center text-slate-400 text-sm">
+        Sélectionne un salon (ou rejoins-en un) pour démarrer.
+      </div>
+    ) : activeRoom.is_pending ? (
+      <div className="flex-1 flex items-center justify-center text-slate-400 text-sm">
+        Demande envoyée — en attente d'approbation du créateur du salon.
+      </div>
+    ) : !activeRoom.is_member ? (
+      <div className="flex-1 flex flex-col items-center justify-center text-slate-400 text-sm gap-3">
+        <p>Rejoins <strong>{activeRoom.name}</strong> pour voir et envoyer des messages.</p>
+        <button onClick={() => handleJoinRoom(activeRoom)} className="bg-red-600 hover:bg-red-700 text-white text-sm font-bold px-4 py-2 rounded transition">
+          Rejoindre le salon
+        </button>
+      </div>
+    ) : (
+      <>
+        <div className={`px-4 sm:px-6 py-4 border-b-2 flex items-center gap-3 justify-between ${darkMode ? 'bg-[#1E40AF]' : 'bg-white'}`} style={{ borderColor: activeRoom.color || '#DC2626' }}>
+          <div className="flex items-center gap-3 min-w-0">
+            <button type="button" onClick={() => setActiveRoom(null)} className="sm:hidden -ml-1 mr-1"><ArrowLeft size={20} /></button>
+            <div className="w-10 h-10 rounded-full text-white flex items-center justify-center font-bold shadow-sm shrink-0" style={{ background: activeRoom.color || '#DC2626' }}>#</div>
+            <div className="min-w-0">
+              <h3 className="font-bold text-sm truncate">{activeRoom.name}</h3>
+              <p className="text-xs text-slate-400 truncate">{activeRoom.description || `${activeRoom.member_count} membre(s)`}</p>
             </div>
-          ) : activeRoom.is_pending ? (
-            <div className="flex-1 flex items-center justify-center text-slate-400 text-sm">
-              Demande envoyée — en attente d'approbation du créateur du salon.
-            </div>
-          ) : !activeRoom.is_member ? (
-            <div className="flex-1 flex flex-col items-center justify-center text-slate-400 text-sm gap-3">
-              <p>Rejoins <strong>{activeRoom.name}</strong> pour voir et envoyer des messages.</p>
-              <button onClick={() => handleJoinRoom(activeRoom)} className="bg-red-600 hover:bg-red-700 text-white text-sm font-bold px-4 py-2 rounded transition">
-                Rejoindre le salon
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <button onClick={() => toggleMute('room', activeRoom.id)} title="Notifications">
+              {isMuted('room', activeRoom.id) ? <BellOff size={16} /> : <Bell size={16} />}
+            </button>
+            {activeRoom.pending_count > 0 && (
+              <button onClick={() => { fetchPending(activeRoom.id); setShowPendingModal(true); }} className="text-xs bg-amber-100 text-amber-700 font-bold px-2.5 py-1 rounded-full">
+                {activeRoom.pending_count} demande(s)
               </button>
+            )}
+            <button onClick={() => handleLeaveRoom(activeRoom)} className="text-xs text-slate-400 hover:text-red-600 font-semibold">Quitter</button>
+          </div>
+        </div>
+
+        {showPendingModal && (
+          <div className="absolute inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
+            <div className={`w-full max-w-sm rounded-2xl shadow-2xl border p-5 ${darkMode ? 'bg-[#1E40AF] border-slate-700 text-white' : 'bg-white border-slate-200'}`}>
+              <div className="flex justify-between items-center mb-3">
+                <h3 className="font-bold text-sm">Demandes d'adhésion</h3>
+                <button onClick={() => setShowPendingModal(false)}><X size={18} /></button>
+              </div>
+              {pendingRequests.length === 0 ? (
+                <p className="text-xs text-slate-400 italic">Aucune demande.</p>
+              ) : (
+                <>
+                  <button onClick={() => handleApproveAll(activeRoom.id)} className="w-full mb-3 bg-red-600 hover:bg-red-700 text-white text-xs font-bold py-2 rounded">
+                    Tout accepter ({pendingRequests.length})
+                  </button>
+                  <div className="space-y-2 max-h-64 overflow-y-auto">
+                    {pendingRequests.map(p => (
+                      <div key={p.membership_id} className="flex items-center justify-between p-2 border border-slate-100 rounded">
+                        <span className="text-sm">{p.full_name}</span>
+                        <button onClick={() => handleApprove(activeRoom.id, p.membership_id)} className="text-xs bg-emerald-600 text-white px-2 py-1 rounded font-bold">Accepter</button>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
             </div>
+          </div>
+        )}
+
+        <div className={`flex-1 min-h-0 overflow-y-auto p-6 space-y-3 relative ${darkMode ? 'bg-[#1E3A8A]' : 'bg-[#EFF6FF]'}`}>
+          {loadingRoomHistory ? (
+            <p className="text-center text-slate-400 text-sm">Chargement...</p>
+          ) : (roomMessagesByRoom[activeRoom.id] || []).length === 0 ? (
+            <p className="text-center text-slate-400 text-sm italic">Aucun message dans ce salon pour le moment.</p>
           ) : (
-            <>
-              <div className={`px-4 sm:px-6 py-4 border-b-2 flex items-center gap-3 justify-between ${darkMode ? 'bg-[#1E40AF]' : 'bg-white'}`} style={{ borderColor: activeRoom.color || '#DC2626' }}>
-                <div className="flex items-center gap-3 min-w-0">
-                  <button type="button" onClick={() => setActiveRoom(null)} className="sm:hidden -ml-1 mr-1"><ArrowLeft size={20} /></button>
-                  <div className="w-10 h-10 rounded-full text-white flex items-center justify-center font-bold shadow-sm shrink-0" style={{ background: activeRoom.color || '#DC2626' }}>#</div>
-                  <div className="min-w-0">
-                    <h3 className="font-bold text-sm truncate">{activeRoom.name}</h3>
-                    <p className="text-xs text-slate-400 truncate">{activeRoom.description || `${activeRoom.member_count} membre(s)`}</p>
+            (roomMessagesByRoom[activeRoom.id] || []).map(msg => {
+              const isMe = msg.sender?.id === currentUser?.id || msg.sender_id === currentUser?.id;
+              const senderName = msg.sender?.full_name || 'Membre';
+              const offset = swipeOffsets[msg.id] || 0;
+              return (
+                <div key={msg.id} className={`flex flex-col group relative ${isMe ? 'items-end' : 'items-start'}`}>
+                  {!isMe && <span className="text-[10px] text-slate-400 ml-2 mb-0.5">{senderName}</span>}
+                  {offset > 0 && (
+                    <span
+                      className="absolute top-1/2 -translate-y-1/2 text-red-500 pointer-events-none"
+                      style={{ left: isMe ? undefined : 4, right: isMe ? 4 : undefined, opacity: Math.min(1, offset / SWIPE_TRIGGER_PX) }}
+                    >
+                      <CornerUpLeft size={18} />
+                    </span>
+                  )}
+                  <div
+                    className={`relative max-w-[70%] rounded-2xl px-4 py-3 shadow-xs select-none ${isMe ? 'bg-gradient-to-br from-red-600 to-rose-700 text-white rounded-br-none' : (darkMode ? 'bg-[#1D4ED8] text-white border border-slate-700 rounded-bl-none' : 'bg-white text-slate-900 border border-slate-200/80 rounded-bl-none')} ${msg._optimistic ? 'opacity-70' : ''}`}
+                    style={{ transform: `translateX(${offset}px)`, transition: offset === 0 ? 'transform 0.2s ease-out' : 'none' }}
+                    {...bubbleGestureHandlers(msg)}
+                  >
+                    {reactionBarMsgId === msg.id && <QuickReactionBar msg={msg} isMe={isMe} />}
+                    <ReplyQuote reply={msg.reply_to} isMe={isMe} />
+                    {isEmojiOnly(msg.content) ? (
+                      <p className="text-5xl leading-tight">{msg.content}</p>
+                    ) : (
+                      <p className="text-sm leading-relaxed whitespace-pre-wrap notranslate" translate="no">{msg.content}</p>
+                    )}
+                    <p className={`text-[10px] mt-1 ${isMe ? 'text-red-100' : 'text-slate-400'}`}>{msg._optimistic ? 'Envoi...' : formatTime(msg.created_at)}</p>
                   </div>
                 </div>
-                <div className="flex items-center gap-2 shrink-0">
-                  <button onClick={() => toggleMute('room', activeRoom.id)} title="Notifications">
-                    {isMuted('room', activeRoom.id) ? <BellOff size={16} /> : <Bell size={16} />}
-                  </button>
-                  {activeRoom.pending_count > 0 && (
-                    <button onClick={() => { fetchPending(activeRoom.id); setShowPendingModal(true); }} className="text-xs bg-amber-100 text-amber-700 font-bold px-2.5 py-1 rounded-full">
-                      {activeRoom.pending_count} demande(s)
+              );
+            })
+          )}
+          <div ref={messagesEndRef} />
+        </div>
+
+        <ReplyBanner target={replyingTo} />
+
+        <form onSubmit={handleSendMessage} className={`p-2 sm:p-4 border-t flex items-center gap-1 sm:gap-2 relative ${darkMode ? 'border-slate-800 bg-[#1E40AF]' : 'border-[#DBEAFE] bg-white'}`}>
+          {showStickerPicker && (
+            <div ref={stickerPickerRef} className={`absolute bottom-20 left-2 sm:left-4 p-3 rounded-2xl shadow-2xl border grid grid-cols-4 gap-2 z-50 w-64 ${darkMode ? 'bg-[#1D4ED8] border-slate-700' : 'bg-white border-slate-200'}`}>
+              {stickerList.map((emoji, i) => (
+                <button key={i} type="button" onClick={() => handleSendSticker(emoji)} className="text-3xl p-2 rounded-xl hover:bg-red-500/15 transition">{emoji}</button>
+              ))}
+            </div>
+          )}
+          <button type="button" onClick={() => setShowStickerPicker(!showStickerPicker)} className="p-1.5 sm:p-2 rounded-xl hover:bg-slate-100/10 transition shrink-0"><Smile size={20} /></button>
+          <input
+            type="text" value={inputText} onChange={(e) => setInputText(e.target.value)}
+            onFocus={scrollToBottomSoon}
+            placeholder={`Écrire dans #${activeRoom.name}...`}
+            className={`flex-1 min-w-0 px-3 sm:px-4 py-2 sm:py-2.5 border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-red-500 ${darkMode ? 'bg-[#1D4ED8] border-slate-700 text-white' : 'bg-[#EFF6FF] border-slate-200'}`}
+          />
+          <button type="submit" disabled={!inputText.trim()} className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-red-600 hover:bg-red-700 text-white flex items-center justify-center shadow transition shrink-0 disabled:opacity-40"><Send size={16} /></button>
+        </form>
+      </>
+    )
+  ) : !activeContact ? (
+    <div className="flex-1 flex items-center justify-center text-slate-400 text-sm">
+      Sélectionne un membre pour démarrer une conversation.
+    </div>
+  ) : (
+    <>
+      <div className={`px-4 sm:px-6 py-4 border-b-2 border-red-600 flex items-center gap-3 justify-between ${darkMode ? 'bg-[#1E40AF]' : 'bg-white'}`}>
+        <div className="flex items-center gap-3 min-w-0">
+          <button type="button" onClick={() => setActiveContact(null)} className="sm:hidden -ml-1 mr-1"><ArrowLeft size={20} /></button>
+          <Avatar name={activeContact.full_name} imageUrl={activeContact.profile_image} className="w-10 h-10 text-sm" />
+          <div className="min-w-0">
+            <h3 className="font-bold text-sm truncate">{activeContact.full_name}</h3>
+            <p className="text-xs text-slate-400 truncate">{activeContact.english_level}</p>
+          </div>
+        </div>
+        <button onClick={() => toggleMute('contact', activeContact.id)} title="Notifications" className="shrink-0">
+          {isMuted('contact', activeContact.id) ? <BellOff size={18} /> : <Bell size={18} />}
+        </button>
+      </div>
+
+      <div className={`flex-1 min-h-0 overflow-y-auto p-6 space-y-4 relative ${darkMode ? 'bg-[#1E3A8A]' : 'bg-[#EFF6FF]'}`}>
+        <div className="absolute inset-0 pointer-events-none" style={{
+          opacity: darkMode ? 0.05 : 0.045,
+          backgroundImage: `repeating-linear-gradient(45deg, #DC2626 0, #DC2626 1.5px, transparent 1.5px, transparent 26px), repeating-linear-gradient(-45deg, #1E40AF 0, #1E40AF 1.5px, transparent 1.5px, transparent 26px)`
+        }} />
+
+        {loadingHistory ? (
+          <p className="text-center text-slate-400 text-sm relative z-10">Chargement de la conversation...</p>
+        ) : currentMessages.length === 0 ? (
+          <p className="text-center text-slate-400 text-sm italic relative z-10">Aucun message avec {activeContact.full_name}. Dis bonjour !</p>
+        ) : (
+          currentMessages.map(msg => {
+            const isMe = msg.sender_id === currentUser?.id;
+            const isTranslating = !!translatingIds[msg.id];
+            const isTranslationVisible = !!translationsVisible[msg.id];
+            const offset = swipeOffsets[msg.id] || 0;
+            return (
+              <div key={msg.id} className={`flex flex-col group relative ${isMe ? 'items-end' : 'items-start'} ${selectedMsgForMenu === msg.id || reactionBarMsgId === msg.id ? 'z-50' : (translationsVisible[msg.id] !== undefined ? 'z-20' : 'z-10')}`}>
+                {offset > 0 && (
+                  <span
+                    className="absolute top-1/2 -translate-y-1/2 text-red-500 pointer-events-none"
+                    style={{ left: isMe ? undefined : 4, right: isMe ? 4 : undefined, opacity: Math.min(1, offset / SWIPE_TRIGGER_PX) }}
+                  >
+                    <CornerUpLeft size={18} />
+                  </span>
+                )}
+                <div
+                  className={`relative max-w-[70%] rounded-2xl px-4 py-3 shadow-xs select-none ${isMe ? 'bg-gradient-to-br from-red-600 to-rose-700 text-white rounded-br-none' : (darkMode ? 'bg-[#1D4ED8] text-white border border-slate-700 rounded-bl-none' : 'bg-white text-slate-900 border border-slate-200/80 rounded-bl-none')} ${msg._optimistic ? 'opacity-70' : ''}`}
+                  style={{ transform: `translateX(${offset}px)`, transition: offset === 0 ? 'transform 0.2s ease-out' : 'none' }}
+                  {...bubbleGestureHandlers(msg)}
+                >
+                  {reactionBarMsgId === msg.id && <QuickReactionBar msg={msg} isMe={isMe} />}
+                  <ReplyQuote reply={msg.reply_to} isMe={isMe} />
+
+                  {msg.media_url && (
+                    msg.media_url.match(/\.(jpeg|jpg|gif|png|webp)$/i) ? (
+                      <img src={msg.media_url} alt={msg.content} className="rounded-lg mb-2 max-h-56 w-full object-cover" />
+                    ) : (
+                      <a href={msg.media_url} download className={`flex items-center gap-2 p-2 rounded-lg mb-2 text-xs font-medium ${isMe ? 'bg-white/10' : 'bg-black/5'}`}>
+                        <FileText size={14} /> <span className="truncate">{msg.content || 'Fichier'}</span>
+                      </a>
+                    )
+                  )}
+                  {msg.content && !(msg.media_url && msg.content === msg.content && msg.media_url.includes(msg.content)) && (
+                    isEmojiOnly(msg.content) ? (
+                      <p className="text-5xl leading-tight">{msg.content}</p>
+                    ) : (
+                      <p className="text-sm leading-relaxed whitespace-pre-wrap notranslate" translate="no">{msg.content}</p>
+                    )
+                  )}
+
+                  {isTranslating && <p className="text-[10px] italic opacity-70 mt-1">Traduction en cours...</p>}
+                  {!isTranslating && isTranslationVisible && traductions[msg.id] && (
+                    <div className={`mt-2 p-2 rounded-xl text-xs border ${isMe ? 'bg-black/20 border-white/30' : (darkMode ? 'bg-[#1E40AF] border-slate-700' : 'bg-slate-100 border-slate-200')}`}>
+                      <p className="italic">{traductions[msg.id]}</p>
+                    </div>
+                  )}
+
+                  {msg.reactions && Object.keys(JSON.parse(msg.reactions)).length > 0 && (
+                    <div className="flex gap-1 mt-1">
+                      {Object.entries(JSON.parse(msg.reactions)).map(([emo, cnt]) => (
+                        <span key={emo} className={`text-[10px] px-1.5 py-0.5 rounded-full ${isMe ? 'bg-black/20' : 'bg-slate-100'}`}>{emo} {cnt}</span>
+                      ))}
+                    </div>
+                  )}
+
+                  <div className={`flex items-center justify-between mt-2 pt-1 border-t text-[11px] gap-4 ${isMe ? 'border-white/20 text-red-100' : 'border-slate-700/20 text-slate-400'}`}>
+                    <span>{msg._optimistic ? 'Envoi...' : formatTime(msg.created_at)}</span>
+                    <button type="button" onClick={() => basculerTraduction(msg)} disabled={isTranslating} className="hover:underline font-semibold disabled:opacity-50">
+                      <Languages size={14} />
+                    </button>
+                  </div>
+
+                  {isMe && (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setSelectedMsgForMenu(selectedMsgForMenu === msg.id ? null : msg.id); }}
+                      className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 transition p-1 bg-black/20 rounded text-white"
+                    >
+                      <ChevronDown size={12} />
                     </button>
                   )}
-                  <button onClick={() => handleLeaveRoom(activeRoom)} className="text-xs text-slate-400 hover:text-red-600 font-semibold">Quitter</button>
-                </div>
-              </div>
 
-              {showPendingModal && (
-                <div className="absolute inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
-                  <div className={`w-full max-w-sm rounded-2xl shadow-2xl border p-5 ${darkMode ? 'bg-[#1E40AF] border-slate-700 text-white' : 'bg-white border-slate-200'}`}>
-                    <div className="flex justify-between items-center mb-3">
-                      <h3 className="font-bold text-sm">Demandes d'adhésion</h3>
-                      <button onClick={() => setShowPendingModal(false)}><X size={18} /></button>
-                    </div>
-                    {pendingRequests.length === 0 ? (
-                      <p className="text-xs text-slate-400 italic">Aucune demande.</p>
-                    ) : (
-                      <>
-                        <button onClick={() => handleApproveAll(activeRoom.id)} className="w-full mb-3 bg-red-600 hover:bg-red-700 text-white text-xs font-bold py-2 rounded">
-                          Tout accepter ({pendingRequests.length})
+                  {selectedMsgForMenu === msg.id && (
+                    <div ref={menuRef} className={`absolute right-0 top-8 z-50 w-40 rounded-lg shadow-xl border py-1 text-xs ${darkMode ? 'bg-[#1D4ED8] border-slate-700 text-white' : 'bg-white border-slate-200 text-slate-800'}`}>
+                      <button onClick={() => { setForwardModalMsg(msg); setSelectedMsgForMenu(null); }} className="w-full text-left px-4 py-2 hover:bg-red-500/10 flex items-center gap-2">
+                        <Send size={13} /> Transférer
+                      </button>
+                      {!msg.media_url && (
+                        <button onClick={() => handleEditMessage(msg)} className="w-full text-left px-4 py-2 hover:bg-red-500/10 flex items-center gap-2">
+                          <Pencil size={13} /> Modifier
                         </button>
-                        <div className="space-y-2 max-h-64 overflow-y-auto">
-                          {pendingRequests.map(p => (
-                            <div key={p.membership_id} className="flex items-center justify-between p-2 border border-slate-100 rounded">
-                              <span className="text-sm">{p.full_name}</span>
-                              <button onClick={() => handleApprove(activeRoom.id, p.membership_id)} className="text-xs bg-emerald-600 text-white px-2 py-1 rounded font-bold">Accepter</button>
-                            </div>
-                          ))}
-                        </div>
-                      </>
-                    )}
-                  </div>
-                </div>
-              )}
-
-              <div className={`flex-1 min-h-0 overflow-y-auto p-6 space-y-3 relative ${darkMode ? 'bg-[#1E3A8A]' : 'bg-[#EFF6FF]'}`}>
-                {loadingRoomHistory ? (
-                  <p className="text-center text-slate-400 text-sm">Chargement...</p>
-                ) : (roomMessagesByRoom[activeRoom.id] || []).length === 0 ? (
-                  <p className="text-center text-slate-400 text-sm italic">Aucun message dans ce salon pour le moment.</p>
-                ) : (
-                  (roomMessagesByRoom[activeRoom.id] || []).map(msg => {
-                    const isMe = msg.sender?.id === currentUser?.id || msg.sender_id === currentUser?.id;
-                    const senderName = msg.sender?.full_name || 'Membre';
-                    const offset = swipeOffsets[msg.id] || 0;
-                    return (
-                      <div key={msg.id} className={`flex flex-col group relative ${isMe ? 'items-end' : 'items-start'}`}>
-                        {!isMe && <span className="text-[10px] text-slate-400 ml-2 mb-0.5">{senderName}</span>}
-                        {offset > 0 && (
-                          <span
-                            className="absolute top-1/2 -translate-y-1/2 text-red-500 pointer-events-none"
-                            style={{ left: isMe ? undefined : 4, right: isMe ? 4 : undefined, opacity: Math.min(1, offset / SWIPE_TRIGGER_PX) }}
-                          >
-                            <CornerUpLeft size={18} />
-                          </span>
-                        )}
-                        <div
-                          className={`relative max-w-[70%] rounded-2xl px-4 py-3 shadow-xs select-none ${isMe ? 'bg-gradient-to-br from-red-600 to-rose-700 text-white rounded-br-none' : (darkMode ? 'bg-[#1D4ED8] text-white border border-slate-700 rounded-bl-none' : 'bg-white text-slate-900 border border-slate-200/80 rounded-bl-none')} ${msg._optimistic ? 'opacity-70' : ''}`}
-                          style={{ transform: `translateX(${offset}px)`, transition: offset === 0 ? 'transform 0.2s ease-out' : 'none' }}
-                          {...bubbleGestureHandlers(msg)}
-                        >
-                          {reactionBarMsgId === msg.id && <QuickReactionBar msg={msg} isMe={isMe} />}
-                          <ReplyQuote reply={msg.reply_to} isMe={isMe} />
-                          {isEmojiOnly(msg.content) ? (
-                            <p className="text-5xl leading-tight">{msg.content}</p>
-                          ) : (
-                            <p className="text-sm leading-relaxed whitespace-pre-wrap notranslate" translate="no">{msg.content}</p>
-                          )}
-                          <p className={`text-[10px] mt-1 ${isMe ? 'text-red-100' : 'text-slate-400'}`}>{msg._optimistic ? 'Envoi...' : formatTime(msg.created_at)}</p>
-                        </div>
-                      </div>
-                    );
-                  })
-                )}
-                <div ref={messagesEndRef} />
-              </div>
-
-              <ReplyBanner target={replyingTo} />
-
-              <form onSubmit={handleSendMessage} className={`p-2 sm:p-4 border-t flex items-center gap-1 sm:gap-2 relative ${darkMode ? 'border-slate-800 bg-[#1E40AF]' : 'border-[#DBEAFE] bg-white'}`}>
-                {showStickerPicker && (
-                  <div ref={stickerPickerRef} className={`absolute bottom-20 left-2 sm:left-4 p-3 rounded-2xl shadow-2xl border grid grid-cols-4 gap-2 z-50 w-64 ${darkMode ? 'bg-[#1D4ED8] border-slate-700' : 'bg-white border-slate-200'}`}>
-                    {stickerList.map((emoji, i) => (
-                      <button key={i} type="button" onClick={() => handleSendSticker(emoji)} className="text-3xl p-2 rounded-xl hover:bg-red-500/15 transition">{emoji}</button>
-                    ))}
-                  </div>
-                )}
-                <button type="button" onClick={() => setShowStickerPicker(!showStickerPicker)} className="p-1.5 sm:p-2 rounded-xl hover:bg-slate-100/10 transition shrink-0"><Smile size={20} /></button>
-                <input
-                  type="text" value={inputText} onChange={(e) => setInputText(e.target.value)}
-                  onFocus={scrollToBottomSoon}
-                  placeholder={`Écrire dans #${activeRoom.name}...`}
-                  className={`flex-1 min-w-0 px-3 sm:px-4 py-2 sm:py-2.5 border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-red-500 ${darkMode ? 'bg-[#1D4ED8] border-slate-700 text-white' : 'bg-[#EFF6FF] border-slate-200'}`}
-                />
-                <button type="submit" disabled={!inputText.trim()} className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-red-600 hover:bg-red-700 text-white flex items-center justify-center shadow transition shrink-0 disabled:opacity-40"><Send size={16} /></button>
-              </form>
-            </>
-          )
-        ) : !activeContact ? (
-          <div className="flex-1 flex items-center justify-center text-slate-400 text-sm">
-            Sélectionne un membre pour démarrer une conversation.
-          </div>
-        ) : (
-          <>
-            <div className={`px-4 sm:px-6 py-4 border-b-2 border-red-600 flex items-center gap-3 justify-between ${darkMode ? 'bg-[#1E40AF]' : 'bg-white'}`}>
-              <div className="flex items-center gap-3 min-w-0">
-                <button type="button" onClick={() => setActiveContact(null)} className="sm:hidden -ml-1 mr-1"><ArrowLeft size={20} /></button>
-                <Avatar name={activeContact.full_name} imageUrl={activeContact.profile_image} className="w-10 h-10 text-sm" />
-                <div className="min-w-0">
-                  <h3 className="font-bold text-sm truncate">{activeContact.full_name}</h3>
-                  <p className="text-xs text-slate-400 truncate">{activeContact.english_level}</p>
-                </div>
-              </div>
-              <button onClick={() => toggleMute('contact', activeContact.id)} title="Notifications" className="shrink-0">
-                {isMuted('contact', activeContact.id) ? <BellOff size={18} /> : <Bell size={18} />}
-              </button>
-            </div>
-
-            <div className={`flex-1 min-h-0 overflow-y-auto p-6 space-y-4 relative ${darkMode ? 'bg-[#1E3A8A]' : 'bg-[#EFF6FF]'}`}>
-              <div className="absolute inset-0 pointer-events-none" style={{
-                opacity: darkMode ? 0.05 : 0.045,
-                backgroundImage: `repeating-linear-gradient(45deg, #DC2626 0, #DC2626 1.5px, transparent 1.5px, transparent 26px), repeating-linear-gradient(-45deg, #1E40AF 0, #1E40AF 1.5px, transparent 1.5px, transparent 26px)`
-              }} />
-
-              {loadingHistory ? (
-                <p className="text-center text-slate-400 text-sm relative z-10">Chargement de la conversation...</p>
-              ) : currentMessages.length === 0 ? (
-                <p className="text-center text-slate-400 text-sm italic relative z-10">Aucun message avec {activeContact.full_name}. Dis bonjour !</p>
-              ) : (
-                currentMessages.map(msg => {
-                  const isMe = msg.sender_id === currentUser?.id;
-                  const isTranslating = !!translatingIds[msg.id];
-                  const isTranslationVisible = !!translationsVisible[msg.id];
-                  const offset = swipeOffsets[msg.id] || 0;
-                  return (
-                    <div key={msg.id} className={`flex flex-col group relative ${isMe ? 'items-end' : 'items-start'} ${selectedMsgForMenu === msg.id || reactionBarMsgId === msg.id ? 'z-50' : (translationsVisible[msg.id] !== undefined ? 'z-20' : 'z-10')}`}>
-                      {offset > 0 && (
-                        <span
-                          className="absolute top-1/2 -translate-y-1/2 text-red-500 pointer-events-none"
-                          style={{ left: isMe ? undefined : 4, right: isMe ? 4 : undefined, opacity: Math.min(1, offset / SWIPE_TRIGGER_PX) }}
-                        >
-                          <CornerUpLeft size={18} />
-                        </span>
                       )}
-                      <div
-                        className={`relative max-w-[70%] rounded-2xl px-4 py-3 shadow-xs select-none ${isMe ? 'bg-gradient-to-br from-red-600 to-rose-700 text-white rounded-br-none' : (darkMode ? 'bg-[#1D4ED8] text-white border border-slate-700 rounded-bl-none' : 'bg-white text-slate-900 border border-slate-200/80 rounded-bl-none')} ${msg._optimistic ? 'opacity-70' : ''}`}
-                        style={{ transform: `translateX(${offset}px)`, transition: offset === 0 ? 'transform 0.2s ease-out' : 'none' }}
-                        {...bubbleGestureHandlers(msg)}
-                      >
-                        {reactionBarMsgId === msg.id && <QuickReactionBar msg={msg} isMe={isMe} />}
-                        <ReplyQuote reply={msg.reply_to} isMe={isMe} />
-
-                        {msg.media_url && (
-                          msg.media_url.match(/\.(jpeg|jpg|gif|png|webp)$/i) ? (
-                            <img src={msg.media_url} alt={msg.content} className="rounded-lg mb-2 max-h-56 w-full object-cover" />
-                          ) : (
-                            <a href={msg.media_url} download className={`flex items-center gap-2 p-2 rounded-lg mb-2 text-xs font-medium ${isMe ? 'bg-white/10' : 'bg-black/5'}`}>
-                              <FileText size={14} /> <span className="truncate">{msg.content || 'Fichier'}</span>
-                            </a>
-                          )
-                        )}
-                        {msg.content && !(msg.media_url && msg.content === msg.content && msg.media_url.includes(msg.content)) && (
-                          isEmojiOnly(msg.content) ? (
-                            <p className="text-5xl leading-tight">{msg.content}</p>
-                          ) : (
-                            <p className="text-sm leading-relaxed whitespace-pre-wrap notranslate" translate="no">{msg.content}</p>
-                          )
-                        )}
-
-                        {isTranslating && <p className="text-[10px] italic opacity-70 mt-1">Traduction en cours...</p>}
-                        {!isTranslating && isTranslationVisible && traductions[msg.id] && (
-                          <div className={`mt-2 p-2 rounded-xl text-xs border ${isMe ? 'bg-black/20 border-white/30' : (darkMode ? 'bg-[#1E40AF] border-slate-700' : 'bg-slate-100 border-slate-200')}`}>
-                            <p className="italic">{traductions[msg.id]}</p>
-                          </div>
-                        )}
-
-                        {msg.reactions && Object.keys(JSON.parse(msg.reactions)).length > 0 && (
-                          <div className="flex gap-1 mt-1">
-                            {Object.entries(JSON.parse(msg.reactions)).map(([emo, cnt]) => (
-                              <span key={emo} className={`text-[10px] px-1.5 py-0.5 rounded-full ${isMe ? 'bg-black/20' : 'bg-slate-100'}`}>{emo} {cnt}</span>
-                            ))}
-                          </div>
-                        )}
-
-                        <div className={`flex items-center justify-between mt-2 pt-1 border-t text-[11px] gap-4 ${isMe ? 'border-white/20 text-red-100' : 'border-slate-700/20 text-slate-400'}`}>
-                          <span>{msg._optimistic ? 'Envoi...' : formatTime(msg.created_at)}</span>
-                          <button type="button" onClick={() => basculerTraduction(msg)} disabled={isTranslating} className="hover:underline font-semibold disabled:opacity-50">
-                            <Languages size={14} />
-                          </button>
-                        </div>
-
-                        {isMe && (
-                          <button
-                            onClick={(e) => { e.stopPropagation(); setSelectedMsgForMenu(selectedMsgForMenu === msg.id ? null : msg.id); }}
-                            className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 transition p-1 bg-black/20 rounded text-white"
-                          >
-                            <ChevronDown size={12} />
-                          </button>
-                        )}
-
-                        {selectedMsgForMenu === msg.id && (
-                          <div ref={menuRef} className={`absolute right-0 top-8 z-50 w-40 rounded-lg shadow-xl border py-1 text-xs ${darkMode ? 'bg-[#1D4ED8] border-slate-700 text-white' : 'bg-white border-slate-200 text-slate-800'}`}>
-                            <button onClick={() => { setForwardModalMsg(msg); setSelectedMsgForMenu(null); }} className="w-full text-left px-4 py-2 hover:bg-red-500/10 flex items-center gap-2">
-                              <Send size={13} /> Transférer
-                            </button>
-                            {!msg.media_url && (
-                              <button onClick={() => handleEditMessage(msg)} className="w-full text-left px-4 py-2 hover:bg-red-500/10 flex items-center gap-2">
-                                <Pencil size={13} /> Modifier
-                              </button>
-                            )}
-                            <button onClick={() => handleDeleteMessage(msg)} className="w-full text-left px-4 py-2 hover:bg-red-500/10 text-red-500 flex items-center gap-2">
-                              <Trash2 size={13} /> Supprimer
-                            </button>
-                          </div>
-                        )}
-                      </div>
+                      <button onClick={() => handleDeleteMessage(msg)} className="w-full text-left px-4 py-2 hover:bg-red-500/10 text-red-500 flex items-center gap-2">
+                        <Trash2 size={13} /> Supprimer
+                      </button>
                     </div>
-                  );
-                })
-              )}
-              <div ref={messagesEndRef} />
-            </div>
-
-            <input type="file" ref={fileInputRef} className="hidden" accept="image/*,video/*" onChange={handleFileUpload} />
-            <input type="file" ref={docInputRef} className="hidden" accept=".pdf,.doc,.docx,.txt" onChange={handleFileUpload} />
-
-            {suggestions.length > 0 && (
-              <div className={`px-4 py-2 border-t flex items-center gap-2 overflow-x-auto ${darkMode ? 'bg-[#1E40AF] border-slate-800' : 'bg-white border-slate-200'}`}>
-                <span className="text-[10px] text-slate-400 shrink-0">{dictLang === 'fr' ? '🇫🇷' : '🇬🇧'}</span>
-                {suggestions.map(word => (
-                  <button key={word} type="button" onClick={() => applySuggestion(word)} className={`text-xs px-3 py-1 rounded-full border shrink-0 transition ${darkMode ? 'border-slate-700 text-slate-200 hover:bg-red-500/15' : 'border-slate-200 text-slate-700 hover:bg-red-50'}`}>
-                    {word}
-                  </button>
-                ))}
-              </div>
-            )}
-
-            {forwardModalMsg && (
-              <div className="absolute inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
-                <div className={`w-full max-w-sm rounded-2xl shadow-2xl border overflow-hidden flex flex-col max-h-[420px] ${darkMode ? 'bg-[#1E40AF] border-slate-700 text-white' : 'bg-white border-slate-200'}`}>
-                  <div className="p-4 border-b border-slate-700/20 flex items-center justify-between">
-                    <h3 className="font-bold text-sm">Transférer à...</h3>
-                    <button onClick={() => setForwardModalMsg(null)}><X size={18} /></button>
-                  </div>
-                  <div className="p-3 border-b border-slate-700/20">
-                    <input type="text" value={forwardSearch} onChange={(e) => setForwardSearch(e.target.value)} placeholder="Rechercher un membre..."
-                      className={`w-full px-3 py-1.5 border rounded-lg text-xs focus:outline-none ${darkMode ? 'bg-[#1D4ED8] border-slate-700 text-white' : 'bg-slate-100 border-slate-200'}`} />
-                  </div>
-                  <div className="flex-1 overflow-y-auto p-2 space-y-1">
-                    {otherMembers.filter(m => m.full_name.toLowerCase().includes(forwardSearch.toLowerCase())).map(member => (
-                      <div key={member.id} onClick={() => executeForward(member)} className="flex items-center gap-3 p-2.5 rounded-xl cursor-pointer hover:bg-red-500/10 transition">
-                        <Avatar name={member.full_name} imageUrl={member.profile_image} className="w-9 h-9 text-xs" />
-                        <span className="text-sm font-medium">{member.full_name}</span>
-                      </div>
-                    ))}
-                  </div>
+                  )}
                 </div>
               </div>
-            )}
-
-            {editingMessageId && (
-              <div className={`px-4 py-2 border-t flex items-center justify-between text-xs ${darkMode ? 'bg-[#1E40AF] border-slate-800' : 'bg-slate-100 border-slate-200'}`}>
-                <span className="font-bold text-red-500 flex items-center gap-1.5"><Pencil size={12} /> Modification du message...</span>
-                <button onClick={() => { setEditingMessageId(null); setInputText(''); }} className="font-bold hover:opacity-75"><X size={14} /></button>
-              </div>
-            )}
-
-            {!editingMessageId && <ReplyBanner target={replyingTo} />}
-
-            <form onSubmit={handleSendMessage} className={`p-2 sm:p-4 border-t flex items-center gap-1 sm:gap-2 relative ${darkMode ? 'border-slate-800 bg-[#1E40AF]' : 'border-[#DBEAFE] bg-white'}`}>
-              {showStickerPicker && (
-                <div ref={stickerPickerRef} className={`absolute bottom-20 left-2 sm:left-4 p-3 rounded-2xl shadow-2xl border grid grid-cols-4 gap-2 z-50 w-64 ${darkMode ? 'bg-[#1D4ED8] border-slate-700' : 'bg-white border-slate-200'}`}>
-                  {stickerList.map((emoji, i) => (
-                    <button key={i} type="button" onClick={() => handleSendSticker(emoji)} className="text-3xl p-2 rounded-xl hover:bg-red-500/15 transition">{emoji}</button>
-                  ))}
-                </div>
-              )}
-              {showAttachMenu && (
-                <div ref={attachMenuRef} className={`absolute bottom-20 left-10 sm:left-12 z-50 rounded-2xl shadow-xl border py-3 px-2 flex flex-col gap-2 min-w-[180px] ${darkMode ? 'bg-[#1D4ED8] border-slate-700' : 'bg-white border-slate-200'}`}>
-                  <button type="button" onClick={() => fileInputRef.current.click()} className="flex items-center gap-3 px-4 py-2 text-xs rounded-xl hover:bg-red-500/10 font-medium"><ImageIcon size={15} /> Photo/Vidéo</button>
-                  <button type="button" onClick={() => docInputRef.current.click()} className="flex items-center gap-3 px-4 py-2 text-xs rounded-xl hover:bg-red-500/10 font-medium"><FileText size={15} /> Document</button>
-
-                  <div className="sm:hidden border-t border-slate-700/20 pt-2 mt-1 flex items-center justify-between px-2">
-                    <div className="flex items-center rounded-lg overflow-hidden border text-xs font-semibold">
-                      <button type="button" onClick={() => setDictLang('fr')} className={`px-2 py-1 ${dictLang === 'fr' ? 'bg-red-600 text-white' : 'text-slate-500'}`}>🇫🇷</button>
-                      <button type="button" onClick={() => setDictLang('en')} className={`px-2 py-1 ${dictLang === 'en' ? 'bg-red-600 text-white' : 'text-slate-500'}`}>🇬🇧</button>
-                    </div>
-                    <button type="button" onClick={() => { correctText(); setShowAttachMenu(false); }} disabled={isCorrecting} className="px-2 disabled:opacity-50">
-                      {isCorrecting ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />}
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              <div className="flex items-center gap-0.5 sm:gap-1 shrink-0">
-                <button type="button" onClick={() => setShowStickerPicker(!showStickerPicker)} className="p-1.5 sm:p-2 rounded-xl hover:bg-slate-100/10 transition"><Smile size={18} /></button>
-                <button type="button" onClick={() => setShowAttachMenu(!showAttachMenu)} disabled={uploadingFile} className="p-1.5 sm:p-2 rounded-xl hover:bg-slate-100/10 transition disabled:opacity-50">
-                  {uploadingFile ? <Loader2 size={18} className="animate-spin" /> : <Paperclip size={18} />}
-                </button>
-
-                <div className={`hidden sm:flex items-center rounded-lg overflow-hidden border text-xs font-semibold ${darkMode ? 'border-slate-700' : 'border-slate-200'}`}>
-                  <button type="button" onClick={() => setDictLang('fr')} className={`px-2 py-1 ${dictLang === 'fr' ? 'bg-red-600 text-white' : 'text-slate-500'}`}>🇫🇷</button>
-                  <button type="button" onClick={() => setDictLang('en')} className={`px-2 py-1 ${dictLang === 'en' ? 'bg-red-600 text-white' : 'text-slate-500'}`}>🇬🇧</button>
-                </div>
-                <button type="button" onClick={correctText} disabled={isCorrecting} className="hidden sm:inline-flex p-2 rounded-xl hover:bg-slate-100/10 transition disabled:opacity-50">
-                  {isCorrecting ? <Loader2 size={18} className="animate-spin" /> : <Sparkles size={18} />}
-                </button>
-              </div>
-
-              <input
-                type="text" value={inputText} onChange={(e) => setInputText(e.target.value)}
-                onFocus={scrollToBottomSoon}
-                placeholder="Écrivez votre message..."
-                className={`flex-1 min-w-0 px-3 sm:px-4 py-2 sm:py-2.5 border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-red-500 ${darkMode ? 'bg-[#1D4ED8] border-slate-700 text-white' : 'bg-[#EFF6FF] border-slate-200'}`}
-              />
-
-              <button type="submit" disabled={!inputText.trim()} className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-red-600 hover:bg-red-700 text-white flex items-center justify-center shadow transition shrink-0 disabled:opacity-40">
-                <Send size={16} />
-              </button>
-            </form>
-          </>
+            );
+          })
         )}
+        <div ref={messagesEndRef} />
       </div>
-    </div>
-  );
+
+      <input type="file" ref={fileInputRef} className="hidden" accept="image/*,video/*" onChange={handleFileUpload} />
+      <input type="file" ref={docInputRef} className="hidden" accept=".pdf,.doc,.docx,.txt" onChange={handleFileUpload} />
+
+      {suggestions.length > 0 && (
+        <div className={`px-4 py-2 border-t flex items-center gap-2 overflow-x-auto ${darkMode ? 'bg-[#1E40AF] border-slate-800' : 'bg-white border-slate-200'}`}>
+          <span className="text-[10px] text-slate-400 shrink-0">{dictLang === 'fr' ? '🇫🇷' : '🇬🇧'}</span>
+          {suggestions.map(word => (
+            <button key={word} type="button" onClick={() => applySuggestion(word)} className={`text-xs px-3 py-1 rounded-full border shrink-0 transition ${darkMode ? 'border-slate-700 text-slate-200 hover:bg-red-500/15' : 'border-slate-200 text-slate-700 hover:bg-red-50'}`}>
+              {word}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {forwardModalMsg && (
+        <div className="absolute inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
+          <div className={`w-full max-w-sm rounded-2xl shadow-2xl border overflow-hidden flex flex-col max-h-[420px] ${darkMode ? 'bg-[#1E40AF] border-slate-700 text-white' : 'bg-white border-slate-200'}`}>
+            <div className="p-4 border-b border-slate-700/20 flex items-center justify-between">
+              <h3 className="font-bold text-sm">Transférer à...</h3>
+              <button onClick={() => setForwardModalMsg(null)}><X size={18} /></button>
+            </div>
+            <div className="p-3 border-b border-slate-700/20">
+              <input type="text" value={forwardSearch} onChange={(e) => setForwardSearch(e.target.value)} placeholder="Rechercher un membre..."
+                className={`w-full px-3 py-1.5 border rounded-lg text-xs focus:outline-none ${darkMode ? 'bg-[#1D4ED8] border-slate-700 text-white' : 'bg-slate-100 border-slate-200'}`} />
+            </div>
+            <div className="flex-1 overflow-y-auto p-2 space-y-1">
+              {otherMembers.filter(m => m.full_name.toLowerCase().includes(forwardSearch.toLowerCase())).map(member => (
+                <div key={member.id} onClick={() => executeForward(member)} className="flex items-center gap-3 p-2.5 rounded-xl cursor-pointer hover:bg-red-500/10 transition">
+                  <Avatar name={member.full_name} imageUrl={member.profile_image} className="w-9 h-9 text-xs" />
+                  <span className="text-sm font-medium">{member.full_name}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {editingMessageId && (
+        <div className={`px-4 py-2 border-t flex items-center justify-between text-xs ${darkMode ? 'bg-[#1E40AF] border-slate-800' : 'bg-slate-100 border-slate-200'}`}>
+          <span className="font-bold text-red-500 flex items-center gap-1.5"><Pencil size={12} /> Modification du message...</span>
+          <button onClick={() => { setEditingMessageId(null); setInputText(''); }} className="font-bold hover:opacity-75"><X size={14} /></button>
+        </div>
+      )}
+
+      {!editingMessageId && <ReplyBanner target={replyingTo} />}
+
+      <form onSubmit={handleSendMessage} className={`p-2 sm:p-4 border-t flex items-center gap-1 sm:gap-2 relative ${darkMode ? 'border-slate-800 bg-[#1E40AF]' : 'border-[#DBEAFE] bg-white'}`}>
+        {showStickerPicker && (
+          <div ref={stickerPickerRef} className={`absolute bottom-20 left-2 sm:left-4 p-3 rounded-2xl shadow-2xl border grid grid-cols-4 gap-2 z-50 w-64 ${darkMode ? 'bg-[#1D4ED8] border-slate-700' : 'bg-white border-slate-200'}`}>
+            {stickerList.map((emoji, i) => (
+              <button key={i} type="button" onClick={() => handleSendSticker(emoji)} className="text-3xl p-2 rounded-xl hover:bg-red-500/15 transition">{emoji}</button>
+            ))}
+          </div>
+        )}
+        {showAttachMenu && (
+          <div ref={attachMenuRef} className={`absolute bottom-20 left-10 sm:left-12 z-50 rounded-2xl shadow-xl border py-3 px-2 flex flex-col gap-2 min-w-[180px] ${darkMode ? 'bg-[#1D4ED8] border-slate-700' : 'bg-white border-slate-200'}`}>
+            <button type="button" onClick={() => fileInputRef.current.click()} className="flex items-center gap-3 px-4 py-2 text-xs rounded-xl hover:bg-red-500/10 font-medium"><ImageIcon size={15} /> Photo/Vidéo</button>
+            <button type="button" onClick={() => docInputRef.current.click()} className="flex items-center gap-3 px-4 py-2 text-xs rounded-xl hover:bg-red-500/10 font-medium"><FileText size={15} /> Document</button>
+
+            <div className="sm:hidden border-t border-slate-700/20 pt-2 mt-1 flex items-center justify-between px-2">
+              <div className="flex items-center rounded-lg overflow-hidden border text-xs font-semibold">
+                <button type="button" onClick={() => setDictLang('fr')} className={`px-2 py-1 ${dictLang === 'fr' ? 'bg-red-600 text-white' : 'text-slate-500'}`}>🇫🇷</button>
+                <button type="button" onClick={() => setDictLang('en')} className={`px-2 py-1 ${dictLang === 'en' ? 'bg-red-600 text-white' : 'text-slate-500'}`}>🇬🇧</button>
+              </div>
+              <button type="button" onClick={() => { correctText(); setShowAttachMenu(false); }} disabled={isCorrecting} className="px-2 disabled:opacity-50">
+                {isCorrecting ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />}
+              </button>
+            </div>
+          </div>
+        )}
+
+        <div className="flex items-center gap-0.5 sm:gap-1 shrink-0">
+          <button type="button" onClick={() => setShowStickerPicker(!showStickerPicker)} className="p-1.5 sm:p-2 rounded-xl hover:bg-slate-100/10 transition"><Smile size={18} /></button>
+          <button type="button" onClick={() => setShowAttachMenu(!showAttachMenu)} disabled={uploadingFile} className="p-1.5 sm:p-2 rounded-xl hover:bg-slate-100/10 transition disabled:opacity-50">
+            {uploadingFile ? <Loader2 size={18} className="animate-spin" /> : <Paperclip size={18} />}
+          </button>
+
+          <div className={`hidden sm:flex items-center rounded-lg overflow-hidden border text-xs font-semibold ${darkMode ? 'border-slate-700' : 'border-slate-200'}`}>
+            <button type="button" onClick={() => setDictLang('fr')} className={`px-2 py-1 ${dictLang === 'fr' ? 'bg-red-600 text-white' : 'text-slate-500'}`}>🇫🇷</button>
+            <button type="button" onClick={() => setDictLang('en')} className={`px-2 py-1 ${dictLang === 'en' ? 'bg-red-600 text-white' : 'text-slate-500'}`}>🇬🇧</button>
+          </div>
+          <button type="button" onClick={correctText} disabled={isCorrecting} className="hidden sm:inline-flex p-2 rounded-xl hover:bg-slate-100/10 transition disabled:opacity-50">
+            {isCorrecting ? <Loader2 size={18} className="animate-spin" /> : <Sparkles size={18} />}
+          </button>
+        </div>
+
+        <input
+          type="text" value={inputText} onChange={(e) => setInputText(e.target.value)}
+          onFocus={scrollToBottomSoon}
+          placeholder="Écrivez votre message..."
+          className={`flex-1 min-w-0 px-3 sm:px-4 py-2 sm:py-2.5 border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-red-500 ${darkMode ? 'bg-[#1D4ED8] border-slate-700 text-white' : 'bg-[#EFF6FF] border-slate-200'}`}
+        />
+
+        <button type="submit" disabled={!inputText.trim()} className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-red-600 hover:bg-red-700 text-white flex items-center justify-center shadow transition shrink-0 disabled:opacity-40">
+          <Send size={16} />
+        </button>
+      </form>
+    </>
+  )}
+</div>
+
+{/* BULLES FLOTTANTES CHAT HEADS */}
+<div className="fixed bottom-6 right-6 z-50 flex flex-col gap-2 items-end pointer-events-auto">
+  {Object.entries(conversationPreviews).map(([contactId, preview]) => {
+    if (!preview || preview.unread_count === 0) return null;
+    if (activeContact?.id === contactId) return null;
+
+    const contact = members.find(m => m.id === contactId);
+    if (!contact) return null;
+
+    return (
+      <div 
+        key={contactId}
+        onClick={() => openConversation(contact)}
+        className="relative group cursor-pointer animate-bounce flex items-center gap-2 bg-white dark:bg-slate-800 shadow-2xl rounded-full p-1.5 border-2 border-red-600 transition hover:scale-105"
+        title={contact.full_name}
+      >
+        <Avatar name={contact.full_name} imageUrl={contact.profile_image} className="w-12 h-12 text-sm shadow-md" />
+        <span className="absolute -top-1 -right-1 bg-red-600 text-white text-[10px] font-bold w-5 h-5 rounded-full flex items-center justify-center shadow">
+          {preview.unread_count}
+        </span>
+      </div>
+    );
+  })}
+</div>
+
+</div>
+);
 }
