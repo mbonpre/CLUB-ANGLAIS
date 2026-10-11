@@ -3,7 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import {
   MessageCircle, GraduationCap, Settings, MapPin, X, Menu, Home,
   Users, Rocket, Lock, BookOpen, Megaphone, Loader2, Phone, Mail,
-  Pencil, Check,
+  Pencil, Check, KeyRound,
 } from 'lucide-react';
 import Members from './Members.jsx';
 import Projects from './Projects.jsx';
@@ -62,6 +62,11 @@ export default function Dashboard({ isAuthenticated, onLoginSuccess, onLogout })
   const [editingName, setEditingName] = useState(false);
   const [nameInput, setNameInput] = useState('');
   const [savingName, setSavingName] = useState(false);
+
+  // Changement de mot de passe
+  const [showPwdForm, setShowPwdForm] = useState(false);
+  const [pwdForm, setPwdForm] = useState({ current: '', next: '', confirm: '' });
+  const [savingPwd, setSavingPwd] = useState(false);
 
   const isStaff = currentUser && ['ADMIN', 'COMMUNITY_MANAGER'].includes(currentUser.role);
 
@@ -138,6 +143,35 @@ export default function Dashboard({ isAuthenticated, onLoginSuccess, onLogout })
       alert(err.message);
     } finally {
       setSavingName(false);
+    }
+  };
+
+  const handleChangePassword = async (e) => {
+    e.preventDefault();
+    if (pwdForm.next.length < 8) {
+      alert('Le nouveau mot de passe doit faire au moins 8 caractères.');
+      return;
+    }
+    if (pwdForm.next !== pwdForm.confirm) {
+      alert('La confirmation ne correspond pas au nouveau mot de passe.');
+      return;
+    }
+    setSavingPwd(true);
+    try {
+      const res = await fetch(`${API_BASE_URL}/auth/change-password`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify({ current_password: pwdForm.current, new_password: pwdForm.next }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.detail || 'Erreur lors du changement de mot de passe.');
+      alert('Mot de passe mis à jour avec succès.');
+      setPwdForm({ current: '', next: '', confirm: '' });
+      setShowPwdForm(false);
+    } catch (err) {
+      alert(err.message);
+    } finally {
+      setSavingPwd(false);
     }
   };
 
@@ -379,6 +413,31 @@ export default function Dashboard({ isAuthenticated, onLoginSuccess, onLogout })
                       <button onClick={() => navigateTo('chat')} className="w-full text-left px-2 py-1.5 rounded hover:bg-slate-50 text-slate-700 font-medium transition flex items-center gap-2"><MessageCircle size={16} /> Messagerie</button>
                       {isStaff && (
                         <button onClick={() => navigateTo('admin')} className="w-full text-left px-2 py-1.5 rounded hover:bg-red-50 text-red-600 font-medium transition flex items-center gap-2"><Settings size={16} /> Administration</button>
+                      )}
+                      <button onClick={() => setShowPwdForm(!showPwdForm)} className="w-full text-left px-2 py-1.5 rounded hover:bg-slate-50 text-slate-700 font-medium transition flex items-center gap-2">
+                        <KeyRound size={16} /> Changer mon mot de passe
+                      </button>
+                      {showPwdForm && (
+                        <form onSubmit={handleChangePassword} className="space-y-2 pt-1">
+                          <input
+                            type="password" placeholder="Mot de passe actuel" required
+                            value={pwdForm.current} onChange={(e) => setPwdForm({ ...pwdForm, current: e.target.value })}
+                            className="w-full text-xs border border-slate-300 rounded px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-red-500"
+                          />
+                          <input
+                            type="password" placeholder="Nouveau mot de passe (8 caractères min.)" required
+                            value={pwdForm.next} onChange={(e) => setPwdForm({ ...pwdForm, next: e.target.value })}
+                            className="w-full text-xs border border-slate-300 rounded px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-red-500"
+                          />
+                          <input
+                            type="password" placeholder="Confirmer le nouveau mot de passe" required
+                            value={pwdForm.confirm} onChange={(e) => setPwdForm({ ...pwdForm, confirm: e.target.value })}
+                            className="w-full text-xs border border-slate-300 rounded px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-red-500"
+                          />
+                          <button type="submit" disabled={savingPwd} className="w-full bg-red-600 hover:bg-red-700 text-white text-xs font-bold py-2 rounded transition disabled:opacity-50">
+                            {savingPwd ? 'Enregistrement...' : 'Enregistrer'}
+                          </button>
+                        </form>
                       )}
                     </div>
                   </div>
