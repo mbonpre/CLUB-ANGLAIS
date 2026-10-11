@@ -1,12 +1,12 @@
 import os
 
+from alembic import command
+from alembic.config import Config
 from fastapi import FastAPI, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from sqlalchemy.orm import Session
 from pydantic import BaseModel
-from alembic.config import Config
-from alembic import command
+from sqlalchemy.orm import Session
 
 from app.database import engine, Base, SessionLocal, get_db
 from app.api import auth, posts, users, messages, upload, projects, translate, account_requests, admin, stats, rooms, assessment
@@ -18,12 +18,18 @@ from app.models import user, post, message, project, account_request, level_hist
 app = FastAPI(
     title="Club d'Anglais API",
     description="API Backend de la plateforme communautaire et réseau",
-    version="1.0.0"
+    version="1.0.0",
 )
+
+# Origines autorisées : définis ALLOWED_ORIGINS sur Render, séparées par des virgules, ex :
+#   https://www.internationalyee.com,https://club-anglais.vercel.app
+# Sans cette variable, on garde l'ancien comportement (toutes les origines).
+_origins_env = os.getenv("ALLOWED_ORIGINS", "").strip()
+ALLOWED_ORIGINS = [o.strip() for o in _origins_env.split(",") if o.strip()] or ["*"]
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -47,20 +53,27 @@ def run_migrations():
 
 @app.on_event("startup")
 def create_initial_admin():
+    """Crée le premier Super Admin uniquement si ADMIN_EMAIL et ADMIN_PASSWORD sont
+    définis dans l'environnement (plus aucun identifiant écrit dans le code)."""
+    admin_email = os.getenv("ADMIN_EMAIL", "").strip()
+    admin_password = os.getenv("ADMIN_PASSWORD", "")
+    if not admin_email or not admin_password:
+        return
+
     db = SessionLocal()
     try:
-        admin_exists = db.query(User).filter(User.email == "admin@clubanglais.com").first()
+        admin_exists = db.query(User).filter(User.email == admin_email).first()
         if not admin_exists:
             initial_admin = User(
-                full_name="Super Admin", email="admin@clubanglais.com",
-                hashed_password=get_password_hash("AdminPass123!"),
+                full_name="Super Admin", email=admin_email,
+                hashed_password=get_password_hash(admin_password),
                 role=UserRole.ADMIN, is_super_admin=True,
                 english_level="C2", is_active=True,
-                bio="Administrateur principal de la plateforme Club Anglais."
+                bio="Administrateur principal de la plateforme Club Anglais.",
             )
             db.add(initial_admin)
             db.commit()
-            print(">>> Compte Administrateur par défaut créé avec succès !")
+            print(">>> Compte Administrateur initial créé avec succès !")
     finally:
         db.close()
 
