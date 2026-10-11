@@ -4,8 +4,20 @@ import { API_BASE_URL } from '../config';
 
 const detectLanguage = (t) => /[àâäéèêëîïôöùûüç]|(?:\b(le|la|les|des|une|un|est|vous|je|nous|avec|bonjour|merci)\b)/i.test(t) ? 'fr' : 'en';
 const getInitials = (n) => { if (!n) return '?'; const p = n.trim().split(/\s+/); return p.length >= 2 ? (p[0][0]+p[1][0]).toUpperCase() : p[0].slice(0,2).toUpperCase(); };
+
+// Les dates du serveur sont en UTC mais peuvent arriver sans fuseau : on force le "Z"
+// pour que le navigateur les convertisse correctement (sinon décalage d'1 h au Bénin).
+const parseServerDate = (iso) => {
+  if (!iso) return new Date(NaN);
+  let s = String(iso).replace(/(\.\d{3})\d+/, '$1'); // microsecondes -> millisecondes
+  if (!/(Z|[+-]\d{2}:?\d{2})$/i.test(s)) s += 'Z';
+  return new Date(s);
+};
+
 const timeAgo = (iso) => {
-  const m = Math.floor((Date.now() - new Date(iso).getTime()) / 60000);
+  const t = parseServerDate(iso).getTime();
+  if (Number.isNaN(t)) return '';
+  const m = Math.max(0, Math.floor((Date.now() - t) / 60000));
   if (m < 1) return "À l'instant"; if (m < 60) return `${m} min`;
   const h = Math.floor(m/60); if (h < 24) return `${h} h`;
   return `${Math.floor(h/24)} j`;
@@ -48,6 +60,7 @@ export default function Posts({ activeTab, isAuthenticated, onRequestLogin }) {
   const [error, setError] = useState('');
   const [postsError, setPostsError] = useState('');
   const [loading, setLoading] = useState(true);
+  const [creatingPost, setCreatingPost] = useState(false);
   const [translations, setTranslations] = useState({});
   const [translatingPostId, setTranslatingPostId] = useState(null);
   const [myLikedIds, setMyLikedIds] = useState(new Set());
@@ -80,7 +93,7 @@ export default function Posts({ activeTab, isAuthenticated, onRequestLogin }) {
   const fetchMyLikes = async () => {
     if (!isAuthenticated) { setMyLikedIds(new Set()); return; }
     try {
-      const r = await fetch(   `${API_BASE_URL}/posts/my-likes`, { headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` } });
+      const r = await fetch(`${API_BASE_URL}/posts/my-likes`, { headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` } });
       if (r.ok) setMyLikedIds(new Set(await r.json()));
     } catch (e) {}
   };
@@ -88,7 +101,7 @@ export default function Posts({ activeTab, isAuthenticated, onRequestLogin }) {
   const fetchCurrentUser = async () => {
     if (!isAuthenticated) { setCurrentUser(null); return; }
     try {
-      const r = await fetch(   `${API_BASE_URL}/auth/me`, { headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` } });
+      const r = await fetch(`${API_BASE_URL}/auth/me`, { headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` } });
       if (r.ok) setCurrentUser(await r.json());
     } catch (e) {}
   };
@@ -97,7 +110,10 @@ export default function Posts({ activeTab, isAuthenticated, onRequestLogin }) {
   useEffect(() => { fetchMyLikes(); fetchCurrentUser(); }, [isAuthenticated]);
 
   const handleCreatePost = async (e) => {
-    e.preventDefault(); setError('');
+    e.preventDefault();
+    if (creatingPost) return; // évite les doubles publications (double clic)
+    setError('');
+    setCreatingPost(true);
     const token = localStorage.getItem("token");
     try {
       let mediaUrl = "";
@@ -107,14 +123,14 @@ export default function Posts({ activeTab, isAuthenticated, onRequestLogin }) {
         if (!up.ok) throw new Error("Erreur upload.");
         mediaUrl = (await up.json()).url;
       }
-      const r = await fetch(   `${API_BASE_URL}/posts/`, {
+      const r = await fetch(`${API_BASE_URL}/posts/`, {
         method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-        body: JSON.stringify({ title, content, post_type: postType, image_url: mediaUrl })
+        body: JSON.stringify({ title: title.trim(), content: content.trim(), post_type: postType, image_url: mediaUrl })
       });
       const d = await r.json();
       if (!r.ok) throw new Error(d.detail || "Erreur.");
       setTitle(''); setContent(''); setMediaFile(null); fetchPosts();
-    } catch (e) { setError(e.message); }
+    } catch (e) { setError(e.message); } finally { setCreatingPost(false); }
   };
 
   const startEditPost = (post) => {
@@ -140,6 +156,8 @@ export default function Posts({ activeTab, isAuthenticated, onRequestLogin }) {
       const d = await r.json();
       if (!r.ok) throw new Error(d.detail || "Erreur lors de la modification.");
       setPosts(p => p.map(x => x.id === post.id ? { ...x, title: d.title, content: d.content } : x));
+      // L'ancienne traduction ne correspond plus au texte modifié
+      setTranslations(prev => { const n = { ...prev }; delete n[post.id]; return n; });
       cancelEditPost();
     } catch (e) { alert(e.message); } finally { setSavingEdit(false); }
   };
@@ -157,8 +175,8 @@ export default function Posts({ activeTab, isAuthenticated, onRequestLogin }) {
 
   const handleTranslate = async (postId, text) => {
     const cur = translations[postId];
-    if (cur?.isTranslated) { setTranslations({ ...translations, [postId]: { ...cur, isTranslated: false } }); return; }
-    if (cur?.translatedText) { setTranslations({ ...translations, [postId]: { ...cur, isTranslated: true } }); return; }
+    if (cur?.isTranslated) { setTranslations(prev => ({ ...prev, [postId]: { ...prev[postId], isTranslated: false } })); return; }
+    if (cur?.translatedText) { setTranslations(prev => ({ ...prev, [postId]: { ...prev[postId], isTranslated: true } })); return; }
     setTranslatingPostId(postId);
     try {
       const target = detectLanguage(text) === 'fr' ? 'en' : 'fr';
@@ -166,9 +184,10 @@ export default function Posts({ activeTab, isAuthenticated, onRequestLogin }) {
       if (!r.ok) { const e = await r.json().catch(()=>({})); throw new Error(e.detail || `Erreur ${r.status}`); }
       const d = await r.json();
       if (!d.translatedText) throw new Error('Réponse vide');
-      setTranslations({ ...translations, [postId]: { translatedText: d.translatedText, isTranslated: true } });
+      setTranslations(prev => ({ ...prev, [postId]: { translatedText: d.translatedText, isTranslated: true } }));
     } catch (e) {
-      setTranslations({ ...translations, [postId]: { translatedText: `⚠️ Indisponible (${e.message})`, isTranslated: true } });
+      // Pas de mise en cache de l'erreur : un nouveau clic relance la traduction
+      alert(`Traduction indisponible (${e.message})`);
     } finally { setTranslatingPostId(null); }
   };
 
@@ -177,6 +196,7 @@ export default function Posts({ activeTab, isAuthenticated, onRequestLogin }) {
     setLikingId(postId);
     try {
       const r = await fetch(`${API_BASE_URL}/posts/${postId}/like`, { method: 'POST', headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` } });
+      if (!r.ok) throw new Error(`Erreur ${r.status}`);
       const d = await r.json();
       setPosts(p => p.map(x => x.id === postId ? { ...x, likes_count: d.likes_count } : x));
       setMyLikedIds(prev => { const n = new Set(prev); d.liked ? n.add(postId) : n.delete(postId); return n; });
@@ -193,8 +213,8 @@ export default function Posts({ activeTab, isAuthenticated, onRequestLogin }) {
       const r = await fetch(`${API_BASE_URL}/posts/${postId}/comments`, { method: 'POST', headers: authHeaders(), body: JSON.stringify({ text: text.trim() }) });
       const d = await r.json();
       if (!r.ok) throw new Error(d.detail || "Erreur.");
-      setPosts(p => p.map(x => x.id === postId ? { ...x, comments: [...x.comments, d] } : x));
-      setCommentInputs({ ...commentInputs, [postId]: '' });
+      setPosts(p => p.map(x => x.id === postId ? { ...x, comments: [...(x.comments || []), d] } : x));
+      setCommentInputs(prev => ({ ...prev, [postId]: '' }));
       setExpandedComments(prev => new Set(prev).add(postId));
     } catch (e) { alert(e.message); } finally { setSubmittingCommentId(null); }
   };
@@ -221,7 +241,7 @@ export default function Posts({ activeTab, isAuthenticated, onRequestLogin }) {
                 <option value="community">Fil de la Communauté</option>
                 <option value="official">Annonce Officielle</option>
               </select>
-              <button type="submit" className="w-full sm:w-auto bg-red-600 hover:bg-red-700 text-white font-bold px-5 py-2 rounded text-sm">Publier</button>
+              <button type="submit" disabled={creatingPost} className="w-full sm:w-auto bg-red-600 hover:bg-red-700 text-white font-bold px-5 py-2 rounded text-sm disabled:opacity-50">{creatingPost ? 'Publication...' : 'Publier'}</button>
             </div>
           </form>
         </div>
@@ -325,7 +345,7 @@ export default function Posts({ activeTab, isAuthenticated, onRequestLogin }) {
               {isAuthenticated ? (
                 <form onSubmit={(e) => handleAddComment(post.id, e)} className="flex gap-2 mt-2 items-center">
                   <div className="w-7 h-7 shrink-0 rounded-full bg-slate-200"></div>
-                  <input type="text" placeholder="Écrire un commentaire..." value={commentInputs[post.id] || ''} onChange={(e)=>setCommentInputs({...commentInputs,[post.id]:e.target.value})} className="flex-1 min-w-0 p-1.5 text-xs border border-slate-200 rounded-full bg-slate-50 focus:outline-none" />
+                  <input type="text" placeholder="Écrire un commentaire..." value={commentInputs[post.id] || ''} onChange={(e)=>setCommentInputs(prev => ({ ...prev, [post.id]: e.target.value }))} className="flex-1 min-w-0 p-1.5 text-xs border border-slate-200 rounded-full bg-slate-50 focus:outline-none" />
                   <button type="submit" disabled={submittingCommentId === post.id} className="shrink-0 text-red-600 text-xs font-bold px-2">{submittingCommentId === post.id ? '...' : 'Envoyer'}</button>
                 </form>
               ) : (

@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import {
-  Moon, Sun, Bell, BellOff, X, Send, Paperclip, Smile, Sparkles,
+  Moon, Sun, Bell, BellOff, X, Send, Paperclip, Smile, SmilePlus, Sparkles,
   Loader2, Pencil, Trash2, ArrowLeft, CornerUpLeft, Image as ImageIcon,
   FileText, MessageCircle, Megaphone, Lock, Languages, ChevronDown,
 } from 'lucide-react';
@@ -38,11 +38,6 @@ const getSuggestions = (text, lang) => {
     .slice(0, 5);
 };
 
-const detectLanguage = (text) => {
-  const frenchMarkers = /[àâäéèêëîïôöùûüç]|(?:\b(le|la|les|des|une|un|est|vous|je|nous|avec|bonjour|merci)\b)/i;
-  return frenchMarkers.test(text || '') ? 'fr' : 'en';
-};
-
 const getInitials = (name) => {
   if (!name) return '?';
   const parts = name.trim().split(/\s+/);
@@ -61,12 +56,19 @@ const Avatar = ({ name, imageUrl, className = '' }) => (
   </div>
 );
 
+// Les dates du serveur sont en UTC mais arrivent sans fuseau : on force le "Z"
+// pour que le navigateur les convertisse correctement en heure locale.
+const parseServerDate = (iso) => {
+  if (!iso) return new Date(NaN);
+  let s = String(iso).replace(/(\.\d{3})\d+/, '$1'); // microsecondes -> millisecondes
+  if (!/(Z|[+-]\d{2}:?\d{2})$/i.test(s)) s += 'Z';
+  return new Date(s);
+};
+
 const formatTime = (iso) => {
   try {
     if (!iso) return '';
-    const date = new Date(iso);
-    // Si la date reçue est en UTC brute et nécessite un ajustement ou pour forcer l'heure locale correcte :
-    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+    return parseServerDate(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
   } catch { return ''; }
 };
 
@@ -84,9 +86,23 @@ const isEmojiOnly = (text) => {
   }
 };
 
-// Emojis de réaction rapide façon WhatsApp, affichés au-dessus de la bulle lors d'un appui long.
-// (Contenu envoyé par l'utilisateur — reste en emoji, pas une icône d'interface.)
+// Emojis de réaction rapide façon WhatsApp, affichés au-dessus de la bulle lors d'un appui long
+// (ou du bouton "Réagir"). Contenu envoyé par l'utilisateur — reste en emoji.
 const QUICK_REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '🙏'];
+
+// Format {emoji: [ids utilisateurs]}. Accepte une chaîne JSON (historique) ou un objet (temps réel).
+const parseReactions = (raw) => {
+  if (!raw) return {};
+  let obj = raw;
+  if (typeof raw === 'string') {
+    try { obj = JSON.parse(raw); } catch { return {}; }
+  }
+  const out = {};
+  for (const [emoji, users] of Object.entries(obj || {})) {
+    if (Array.isArray(users)) out[emoji] = users;
+  }
+  return out;
+};
 
 // Distance de swipe (px) à partir de laquelle on déclenche la réponse, et distance max de suivi du doigt.
 const SWIPE_TRIGGER_PX = 55;
@@ -429,7 +445,8 @@ export default function ChatClubAnglais() {
         setMessagesByContact(prev => {
           const existing = prev[otherId] || [];
           if (msg.edited) {
-            return { ...prev, [otherId]: existing.map(m => m.id === msg.id ? msg : m) };
+            // On fusionne pour conserver les réactions déjà présentes sur le message
+            return { ...prev, [otherId]: existing.map(m => m.id === msg.id ? { ...m, ...msg } : m) };
           }
           if (existing.some(m => m.id === msg.id)) return prev;
           const withoutOptimistic = existing.filter(
@@ -442,6 +459,10 @@ export default function ChatClubAnglais() {
         if (msg.sender_id !== currentUser?.id && !msg.edited && !isPrivateOpenAndFocused) {
           notify(resolveSenderName(msg.sender_id), msg.content || '📎 Pièce jointe', chatKey('contact', otherId));
         }
+        // NOUVEAU : conversation ouverte → on marque comme lu côté serveur
+if (msg.sender_id !== currentUser?.id && !msg.edited && isPrivateOpenAndFocused) {
+  fetch(`${API_BASE_URL}/messages/${otherId}/read`, { method: 'POST', headers: authHeaders() });
+}
 
         refreshConversationPreviews();
       };
@@ -645,6 +666,8 @@ export default function ChatClubAnglais() {
   };
 
   const handleReact = async (msg, emoji) => {
+    // On ignore les messages pas encore enregistrés (id temporaire)
+    if (msg._optimistic || typeof msg.id !== 'number') return;
     try {
       await fetch(`${API_BASE_URL}/messages/${msg.id}/react`, {
         method: 'POST', headers: { 'Content-Type': 'application/json', ...authHeaders() },
@@ -732,8 +755,9 @@ export default function ChatClubAnglais() {
     setReplyingTo(null);
   };
 
-  const askClaudeStyleTranslate = async (text, target) => {
-    const res = await fetch(`${API_BASE_URL}/translate/?text=${encodeURIComponent(text.slice(0, 490))}&target=${target}`);
+  // Le serveur détecte la langue du texte et traduit vers l'autre langue du couple FR/EN
+  const askClaudeStyleTranslate = async (text) => {
+    const res = await fetch(`${API_BASE_URL}/translate/?text=${encodeURIComponent(text.slice(0, 490))}&target=auto`);
     if (!res.ok) {
       const errData = await res.json().catch(() => ({}));
       throw new Error(errData.detail || `Erreur HTTP ${res.status}`);
@@ -755,9 +779,7 @@ export default function ChatClubAnglais() {
 
     setTranslatingIds(prev => ({ ...prev, [msg.id]: true }));
     try {
-      const source = detectLanguage(msg.content);
-      const target = source === 'fr' ? 'en' : 'fr';
-      const translated = await askClaudeStyleTranslate(msg.content || '', target);
+      const translated = await askClaudeStyleTranslate(msg.content || '');
       setTraductions(prev => ({ ...prev, [msg.id]: translated }));
       setTranslationsVisible(prev => ({ ...prev, [msg.id]: true }));
     } catch (e) {
@@ -816,8 +838,11 @@ export default function ChatClubAnglais() {
     longPressTimerRef.current = setTimeout(() => {
       if (gestureRef.current.id === msg.id && gestureRef.current.mode === 'pending') {
         gestureRef.current.mode = 'longpress-fired';
-        if (navigator.vibrate) { try { navigator.vibrate(15); } catch (e) {} }
-        setReactionBarMsgId(msg.id);
+        // Les réactions ne concernent que les messages privés pour l'instant
+        if (chatMode === 'private') {
+          if (navigator.vibrate) { try { navigator.vibrate(15); } catch (e) {} }
+          setReactionBarMsgId(msg.id);
+        }
       }
     }, 450);
   };
@@ -921,7 +946,7 @@ export default function ChatClubAnglais() {
 
   const ReplyQuote = ({ reply, isMe }) => reply ? (
     <div className={`mb-1.5 pl-2 py-1 border-l-4 rounded text-xs ${isMe ? 'border-white/70 bg-black/10' : 'border-red-500 bg-black/5'}`}>
-      <p className="font-bold">{resolveSenderName(reply.sender_id)}</p>
+      <p className="font-bold">{resolveSenderName(reply.sender_id ?? reply.sender?.id)}</p>
       <p className="truncate opacity-90 max-w-[220px]">{reply.content || '📎 Pièce jointe'}</p>
     </div>
   ) : null;
@@ -1170,7 +1195,6 @@ export default function ChatClubAnglais() {
                           style={{ transform: `translateX(${offset}px)`, transition: offset === 0 ? 'transform 0.2s ease-out' : 'none' }}
                           {...bubbleGestureHandlers(msg)}
                         >
-                          {reactionBarMsgId === msg.id && <QuickReactionBar msg={msg} isMe={isMe} />}
                           <ReplyQuote reply={msg.reply_to} isMe={isMe} />
                           {isEmojiOnly(msg.content) ? (
                             <p className="text-5xl leading-tight">{msg.content}</p>
@@ -1285,19 +1309,43 @@ export default function ChatClubAnglais() {
                           </div>
                         )}
 
-                        {msg.reactions && Object.keys(JSON.parse(msg.reactions)).length > 0 && (
-                          <div className="flex gap-1 mt-1">
-                            {Object.entries(JSON.parse(msg.reactions)).map(([emo, cnt]) => (
-                              <span key={emo} className={`text-[10px] px-1.5 py-0.5 rounded-full ${isMe ? 'bg-black/20' : 'bg-slate-100'}`}>{emo} {cnt}</span>
-                            ))}
-                          </div>
-                        )}
+                        {(() => {
+                          const entries = Object.entries(parseReactions(msg.reactions)).filter(([, users]) => users.length > 0);
+                          if (entries.length === 0) return null;
+                          return (
+                            <div className="flex flex-wrap gap-1 mt-1">
+                              {entries.map(([emo, users]) => {
+                                const mine = users.includes(currentUser?.id);
+                                return (
+                                  <button
+                                    key={emo}
+                                    type="button"
+                                    onClick={() => handleReact(msg, emo)}
+                                    className={`text-[11px] px-1.5 py-0.5 rounded-full border ${mine ? 'border-red-400 bg-red-500/20' : (isMe ? 'border-transparent bg-black/20' : 'border-transparent bg-slate-100 text-slate-700')}`}
+                                  >
+                                    {emo} {users.length}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          );
+                        })()}
 
                         <div className={`flex items-center justify-between mt-2 pt-1 border-t text-[11px] gap-4 ${isMe ? 'border-white/20 text-red-100' : 'border-slate-700/20 text-slate-400'}`}>
                           <span>{msg._optimistic ? 'Envoi...' : formatTime(msg.created_at)}</span>
-                          <button type="button" onClick={() => basculerTraduction(msg)} disabled={isTranslating} className="hover:underline font-semibold disabled:opacity-50">
-                            <Languages size={14} />
-                          </button>
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              title="Réagir"
+                              onClick={(e) => { e.stopPropagation(); setReactionBarMsgId(msg.id); }}
+                              className="hover:scale-110 transition"
+                            >
+                              <SmilePlus size={14} />
+                            </button>
+                            <button type="button" onClick={() => basculerTraduction(msg)} disabled={isTranslating} className="hover:underline font-semibold disabled:opacity-50">
+                              <Languages size={14} />
+                            </button>
+                          </div>
                         </div>
 
                         {isMe && (
@@ -1432,7 +1480,7 @@ export default function ChatClubAnglais() {
           </>
         )}
       </div>
-      
+
     </div>
   );
 }
