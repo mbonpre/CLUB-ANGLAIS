@@ -1,17 +1,20 @@
-import json
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
 import os
 
-from app.database import engine, Base, SessionLocal
+from fastapi import FastAPI, Depends, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from sqlalchemy.orm import Session
+from pydantic import BaseModel
+from alembic.config import Config
+from alembic import command
+
+from app.database import engine, Base, SessionLocal, get_db
 from app.api import auth, posts, users, messages, upload, projects, translate, account_requests, admin, stats, rooms, assessment
 from app.models.user import User, UserRole
 from app.models.assessment_question import AssessmentQuestion
-from app.services.auth_utils import get_password_hash
+from app.services.auth_utils import get_password_hash, get_current_user
 from app.models import user, post, message, project, account_request, level_history, room, level_assessment, assessment_question, push_subscription
-import subprocess
-from fastapi import Query, HTTPException
+
 app = FastAPI(
     title="Club d'Anglais API",
     description="API Backend de la plateforme communautaire et réseau",
@@ -31,6 +34,18 @@ app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 
 
 @app.on_event("startup")
+def run_migrations():
+    """Applique les migrations Alembic en attente au démarrage.
+    On log l'erreur au lieu de planter, pour ne pas couper l'API."""
+    try:
+        alembic_cfg = Config("alembic.ini")
+        command.upgrade(alembic_cfg, "head")
+        print(">>> Migrations Alembic appliquées avec succès.")
+    except Exception as e:
+        print(f">>> ERREUR lors des migrations Alembic : {type(e).__name__}: {e}")
+
+
+@app.on_event("startup")
 def create_initial_admin():
     db = SessionLocal()
     try:
@@ -43,7 +58,8 @@ def create_initial_admin():
                 english_level="C2", is_active=True,
                 bio="Administrateur principal de la plateforme Club Anglais."
             )
-            db.add(initial_admin); db.commit()
+            db.add(initial_admin)
+            db.commit()
             print(">>> Compte Administrateur par défaut créé avec succès !")
     finally:
         db.close()
@@ -63,22 +79,31 @@ app.include_router(rooms.router)
 app.include_router(assessment.router)
 
 
-from alembic.config import Config
-from alembic import command
+class PasswordReset(BaseModel):
+    new_password: str
 
 
-@app.on_event("startup")
-def run_migrations():
-    """Applique automatiquement les migrations Alembic en attente au démarrage.
-    Utile sur Render (plan gratuit) où il n'y a pas d'accès Shell.
-    On log le résultat au lieu de laisser planter le démarrage, pour éviter
-    qu'un souci de migration ne coupe complètement l'accès à l'API."""
-    try:
-        alembic_cfg = Config("alembic.ini")
-        command.upgrade(alembic_cfg, "head")
-        print(">>> Migrations Alembic appliquées avec succès.")
-    except Exception as e:
-        print(f">>> ERREUR lors des migrations Alembic : {type(e).__name__}: {e}")
+@app.post("/admin/users/{user_id}/reset-password")
+def reset_user_password(
+    user_id: int,
+    data: PasswordReset,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    if current_user.role != UserRole.ADMIN:
+        raise HTTPException(status_code=403, detail="Réservé aux administrateurs.")
+    if len(data.new_password) < 8:
+        raise HTTPException(status_code=400, detail="Le mot de passe doit faire au moins 8 caractères.")
+
+    target = db.query(User).filter(User.id == user_id).first()
+    if not target:
+        raise HTTPException(status_code=404, detail="Utilisateur introuvable.")
+
+    target.hashed_password = get_password_hash(data.new_password)
+    db.commit()
+    return {"message": f"Mot de passe de {target.full_name} réinitialisé."}
+
+
 @app.get("/")
 def read_root():
     return {"status": "online", "message": "API Club d'Anglais opérationnelle !"}
