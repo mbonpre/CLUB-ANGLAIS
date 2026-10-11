@@ -1,25 +1,31 @@
+import asyncio
 import json
+from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException, status, WebSocket, WebSocketDisconnect, Query
-from sqlalchemy.orm import Session
-from sqlalchemy import or_, and_
-from typing import List
 from jose import jwt, JWTError
 from pydantic import BaseModel
+from sqlalchemy import or_, and_
+from sqlalchemy.orm import Session
 
 from app.database import get_db, SessionLocal
 from app.models.message import Message
-from app.models.user import User
-from app.models.room import Room, RoomMembership, RoomMessage
 from app.models.push_subscription import PushSubscription
+from app.models.room import Room, RoomMembership, RoomMessage, MembershipStatus
+from app.models.user import User
 from app.schemas.message import MessageResponse, ConversationPreview
 from app.schemas.push import PushSubscriptionIn, PushUnsubscribeIn
 from app.services.auth_utils import get_current_user, SECRET_KEY, ALGORITHM
-from app.services.websocket import manager
+from app.services.dates import utc_iso
 from app.services.push_service import send_push_to_user, VAPID_PUBLIC_KEY
+from app.services.websocket import manager
 
 router = APIRouter(prefix="/messages", tags=["Messagerie Privée"])
 
+
+# ----------------------------------------------------------------------------
+# Utilitaires
+# ----------------------------------------------------------------------------
 
 def _get_user_id_from_token(token: str) -> int:
     payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
@@ -30,16 +36,49 @@ def _get_user_id_from_token(token: str) -> int:
 
 
 def _reply_preview(replied_message) -> dict | None:
-    """Construit un aperçu léger du message cité (façon WhatsApp), sans dupliquer
-    de données : juste de quoi afficher la citation dans la bulle."""
+    """Aperçu léger du message cité (façon WhatsApp)."""
     if not replied_message:
         return None
     return {
         "id": replied_message.id,
         "content": replied_message.content,
-        "sender_id": replied_message.sender_id if hasattr(replied_message, "sender_id") else None,
+        "sender_id": getattr(replied_message, "sender_id", None),
     }
 
+
+def _load_reactions(raw) -> dict:
+    """Lit les réactions au format {emoji: [ids]}. Ignore l'ancien format {emoji: nombre}."""
+    try:
+        data = json.loads(raw) if raw else {}
+    except (ValueError, TypeError):
+        data = {}
+    if not isinstance(data, dict):
+        return {}
+    return {e: u for e, u in data.items() if isinstance(u, list)}
+
+
+def _push_many(targets: list[tuple[int, str, str, str]]) -> None:
+    """Envoie les notifications push (pywebpush est bloquant) avec sa propre session.
+    Exécuté dans un thread pour ne jamais retarder la livraison des messages."""
+    db = SessionLocal()
+    try:
+        for user_id, title, body, tag in targets:
+            try:
+                send_push_to_user(db, user_id, title=title, body=body, url="/messagerie", tag=tag)
+            except Exception as e:  # une erreur push ne doit jamais casser le chat
+                print(f"[push] échec pour l'utilisateur {user_id} : {e}")
+    finally:
+        db.close()
+
+
+def _fire_push(targets: list[tuple[int, str, str, str]]) -> None:
+    if targets:
+        asyncio.get_running_loop().run_in_executor(None, _push_many, targets)
+
+
+# ----------------------------------------------------------------------------
+# WebSocket
+# ----------------------------------------------------------------------------
 
 @router.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket, token: str = Query(...)):
@@ -56,7 +95,7 @@ async def websocket_endpoint(websocket: WebSocket, token: str = Query(...)):
             data = await websocket.receive_json()
             room_id = data.get("room_id")
 
-            # --- Message de SALON (diffusion à tous les membres du salon) ---
+            # --- Message de SALON ---
             if room_id is not None:
                 content = (data.get("content") or "").strip()
                 media_url = data.get("media_url")
@@ -67,7 +106,9 @@ async def websocket_endpoint(websocket: WebSocket, token: str = Query(...)):
                 db = SessionLocal()
                 try:
                     membership = db.query(RoomMembership).filter(
-                        RoomMembership.room_id == room_id, RoomMembership.user_id == user_id
+                        RoomMembership.room_id == room_id,
+                        RoomMembership.user_id == user_id,
+                        RoomMembership.status == MembershipStatus.APPROVED,
                     ).first()
                     room = db.query(Room).filter(Room.id == room_id).first()
                     if not membership or not room or room.is_closed:
@@ -85,7 +126,13 @@ async def websocket_endpoint(websocket: WebSocket, token: str = Query(...)):
                     db.refresh(new_msg)
 
                     sender = db.query(User).filter(User.id == user_id).first()
-                    member_ids = [m.user_id for m in db.query(RoomMembership).filter(RoomMembership.room_id == room_id).all()]
+                    member_ids = [
+                        m.user_id
+                        for m in db.query(RoomMembership).filter(
+                            RoomMembership.room_id == room_id,
+                            RoomMembership.status == MembershipStatus.APPROVED,
+                        ).all()
+                    ]
 
                     payload = {
                         "type": "room_message",
@@ -94,31 +141,30 @@ async def websocket_endpoint(websocket: WebSocket, token: str = Query(...)):
                         "sender": {"id": sender.id, "full_name": sender.full_name},
                         "content": new_msg.content,
                         "media_url": new_msg.media_url,
-                        "created_at": new_msg.created_at.isoformat(),
+                        "created_at": utc_iso(new_msg.created_at),
                         "reply_to_id": new_msg.reply_to_id,
                         "reply_to": _reply_preview(getattr(new_msg, "reply_to", None)),
                     }
 
-                    # Notification push (nouveau) : chaque membre du salon, sauf
-                    # l'auteur, reçoit une notif même si son onglet est fermé.
-                    for member_id in member_ids:
-                        if member_id != user_id:
-                            send_push_to_user(
-                                db,
-                                member_id,
-                                title=f"#{room.name}",
-                                body=f"{sender.full_name} : {new_msg.content or '📎 Pièce jointe'}",
-                                url="/messagerie",
-                                tag=f"room-{room_id}",
-                            )
+                    push_targets = [
+                        (
+                            mid,
+                            f"#{room.name}",
+                            f"{sender.full_name} : {new_msg.content or '📎 Pièce jointe'}",
+                            f"room-{room_id}",
+                        )
+                        for mid in member_ids if mid != user_id
+                    ]
                 finally:
                     db.close()
 
+                # 1) livraison temps réel d'abord, 2) push ensuite (en arrière-plan)
                 for member_id in member_ids:
                     await manager.send_personal_message(payload, member_id)
+                _fire_push(push_targets)
                 continue
 
-            # --- Message PRIVÉ (1-à-1, comportement existant inchangé) ---
+            # --- Message PRIVÉ ---
             receiver_id = data.get("receiver_id")
             content = (data.get("content") or "").strip()
             media_url = data.get("media_url")
@@ -147,30 +193,31 @@ async def websocket_endpoint(websocket: WebSocket, token: str = Query(...)):
                     "content": new_message.content,
                     "media_url": new_message.media_url,
                     "is_read": new_message.is_read,
-                    "created_at": new_message.created_at.isoformat(),
+                    "created_at": utc_iso(new_message.created_at),
                     "reply_to_id": new_message.reply_to_id,
                     "reply_to": _reply_preview(getattr(new_message, "reply_to", None)),
                 }
 
-                # Notification push (nouveau) : le destinataire est notifié même
-                # si son navigateur/app n'est pas ouvert(e).
                 sender = db.query(User).filter(User.id == user_id).first()
-                send_push_to_user(
-                    db,
+                push_targets = [(
                     int(receiver_id),
-                    title=sender.full_name if sender else "Nouveau message",
-                    body=new_message.content or "📎 Pièce jointe",
-                    url="/messagerie",
-                    tag=f"contact-{user_id}",
-                )
+                    sender.full_name if sender else "Nouveau message",
+                    new_message.content or "📎 Pièce jointe",
+                    f"contact-{user_id}",
+                )]
             finally:
                 db.close()
 
             await manager.send_personal_message(payload, int(receiver_id))
             await manager.send_personal_message(payload, user_id)
+            _fire_push(push_targets)
     except WebSocketDisconnect:
         manager.disconnect(user_id, websocket)
 
+
+# ----------------------------------------------------------------------------
+# Conversations
+# ----------------------------------------------------------------------------
 
 @router.get("/conversations", response_model=List[ConversationPreview])
 def get_conversations(
@@ -205,15 +252,18 @@ def get_conversations(
             unread_count=unread_counts.get(other_id, 0),
         ))
 
-    results.sort(key=lambda r: r.last_message_at, reverse=True)
+    # created_at peut être naïf ou aware selon les lignes : on normalise pour trier
+    results.sort(key=lambda r: utc_iso(r.last_message_at), reverse=True)
     return results
 
 
-# --- Notifications push : clé publique + abonnement/désabonnement (nouveau) ---
+# ----------------------------------------------------------------------------
+# Notifications push
+# ----------------------------------------------------------------------------
 
 @router.get("/push/public-key")
 def get_push_public_key():
-    """Fournit la clé publique VAPID au frontend pour PushManager.subscribe()."""
+    """Clé publique VAPID pour PushManager.subscribe()."""
     if not VAPID_PUBLIC_KEY:
         raise HTTPException(status_code=503, detail="Notifications push non configurées côté serveur.")
     return {"publicKey": VAPID_PUBLIC_KEY}
@@ -225,7 +275,6 @@ def subscribe_to_push(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Enregistre (ou met à jour) l'abonnement push envoyé par le navigateur."""
     existing = db.query(PushSubscription).filter(PushSubscription.endpoint == data.endpoint).first()
     if existing:
         existing.user_id = current_user.id
@@ -256,6 +305,10 @@ def unsubscribe_from_push(
     return {"message": "Désabonnement effectué."}
 
 
+# ----------------------------------------------------------------------------
+# Modification / suppression / lecture / réactions
+# ----------------------------------------------------------------------------
+
 class MessageEdit(BaseModel):
     content: str
 
@@ -277,10 +330,11 @@ async def edit_message(
     db.commit()
     db.refresh(msg)
 
+    # Pas de champ "reactions" ici : le frontend fusionne et conserve les réactions existantes.
     payload = {
         "type": "private_message", "id": msg.id, "sender_id": msg.sender_id, "receiver_id": msg.receiver_id,
         "content": msg.content, "media_url": msg.media_url, "is_read": msg.is_read,
-        "created_at": msg.created_at.isoformat(), "edited": True,
+        "created_at": utc_iso(msg.created_at), "edited": True,
         "reply_to_id": msg.reply_to_id, "reply_to": _reply_preview(getattr(msg, "reply_to", None)),
     }
     await manager.send_personal_message(payload, msg.receiver_id)
@@ -307,6 +361,26 @@ async def delete_message(
     await manager.send_personal_message({"deleted_id": msg_id}, receiver_id)
     await manager.send_personal_message({"deleted_id": msg_id}, sender_id)
     return {"message": "Message supprimé.", "id": msg_id}
+
+
+@router.post("/{other_user_id}/read")
+def mark_conversation_read(
+    other_user_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Marque comme lus les messages reçus de other_user_id (conversation ouverte)."""
+    updated = (
+        db.query(Message)
+        .filter(
+            Message.sender_id == other_user_id,
+            Message.receiver_id == current_user.id,
+            Message.is_read == False,  # noqa: E712
+        )
+        .update({Message.is_read: True}, synchronize_session=False)
+    )
+    db.commit()
+    return {"updated": updated}
 
 
 @router.get("/{other_user_id}", response_model=List[MessageResponse])
@@ -343,30 +417,42 @@ class ReactionIn(BaseModel):
 
 
 @router.post("/{message_id}/react")
-async def react_to_message(message_id: int, data: ReactionIn, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+async def react_to_message(
+    message_id: int,
+    data: ReactionIn,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     msg = db.query(Message).filter(Message.id == message_id).first()
     if not msg:
         raise HTTPException(status_code=404, detail="Message introuvable.")
-    reactions = json.loads(msg.reactions) if msg.reactions else {}
-    reactions[data.emoji] = reactions.get(data.emoji, 0) + 1
+    if current_user.id not in (msg.sender_id, msg.receiver_id):
+        raise HTTPException(status_code=403, detail="Accès refusé.")
+
+    reactions = _load_reactions(msg.reactions)
+    already = current_user.id in reactions.get(data.emoji, [])
+
+    # Une seule réaction par utilisateur (comme WhatsApp) ; re-cliquer la retire.
+    for emo in list(reactions):
+        reactions[emo] = [u for u in reactions[emo] if u != current_user.id]
+    if not already:
+        reactions.setdefault(data.emoji, []).append(current_user.id)
+    reactions = {e: u for e, u in reactions.items() if u}
+
     msg.reactions = json.dumps(reactions)
     db.commit()
+
     payload = {"type": "reaction_update", "id": msg.id, "reactions": reactions}
     await manager.send_personal_message(payload, msg.sender_id)
     await manager.send_personal_message(payload, msg.receiver_id)
     return {"reactions": reactions}
 
 
-# --- Notifications de validation de compte (nouveau) ---------------------
-# Hook prêt à l'emploi : appelez cette fonction depuis votre route
-# d'approbation de compte (probablement dans app/api/auth.py ou un routeur
-# admin que je n'ai pas reçu) pour déclencher la notification "façon
-# WhatsApp" côté client dès qu'un compte est validé.
-#
-# Exemple d'utilisation dans la route qui valide un compte :
-#
+# ----------------------------------------------------------------------------
+# Notification de validation de compte
+# ----------------------------------------------------------------------------
+# Depuis votre route d'approbation de compte :
 #   from app.api.messages import notify_account_validated
 #   await notify_account_validated(user.id)
-#
 async def notify_account_validated(user_id: int, message: str = "Votre compte a été validé. Bienvenue !"):
     await manager.send_personal_message({"type": "account_validated", "message": message}, user_id)

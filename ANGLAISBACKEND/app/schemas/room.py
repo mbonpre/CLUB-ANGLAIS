@@ -1,6 +1,9 @@
-from pydantic import BaseModel
-from typing import Optional
 from datetime import datetime
+from typing import Optional
+
+from pydantic import BaseModel, field_serializer
+
+from app.services.dates import utc_iso
 
 
 class AuthorPublic(BaseModel):
@@ -40,6 +43,10 @@ class RoomResponse(BaseModel):
     is_creator: bool = False
     pending_count: int = 0
 
+    @field_serializer("created_at")
+    def _ser_created_at(self, v: datetime):
+        return utc_iso(v)
+
     class Config:
         from_attributes = True
 
@@ -53,6 +60,10 @@ class RoomMessageResponse(BaseModel):
     created_at: datetime
     reply_to_id: Optional[int] = None
     reply_to: Optional[RoomReplyPreview] = None
+
+    @field_serializer("created_at")
+    def _ser_created_at(self, v: datetime):
+        return utc_iso(v)
 
     class Config:
         from_attributes = True

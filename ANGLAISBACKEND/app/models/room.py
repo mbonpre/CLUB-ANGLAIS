@@ -1,8 +1,10 @@
+import enum
+
 from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Boolean, UniqueConstraint, Enum
 from sqlalchemy.orm import relationship
-from datetime import datetime
-import enum
+
 from app.database import Base
+from app.services.dates import utc_now
 
 
 class MembershipStatus(str, enum.Enum):
@@ -19,7 +21,7 @@ class Room(Base):
     color = Column(String, nullable=True, default="#DC2626")
     created_by = Column(Integer, ForeignKey("users.id"), nullable=False)
     is_closed = Column(Boolean, default=False, nullable=False)
-    created_at = Column(DateTime, default=datetime.now)
+    created_at = Column(DateTime, default=utc_now)
 
     memberships = relationship("RoomMembership", back_populates="room", cascade="all, delete-orphan")
     messages = relationship("RoomMessage", back_populates="room", cascade="all, delete-orphan")
@@ -33,7 +35,7 @@ class RoomMembership(Base):
     room_id = Column(Integer, ForeignKey("rooms.id"), nullable=False)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     status = Column(Enum(MembershipStatus), default=MembershipStatus.PENDING, nullable=False)
-    joined_at = Column(DateTime, default=datetime.now)
+    joined_at = Column(DateTime, default=utc_now)
 
     room = relationship("Room", back_populates="memberships")
     user = relationship("User")
@@ -48,15 +50,14 @@ class RoomMessage(Base):
     content = Column(String, nullable=True)
     media_url = Column(String, nullable=True)
 
-    # --- Réponse à un message de salon (façon WhatsApp) ---
+    # Réponse à un message de salon (façon WhatsApp).
     # ondelete="SET NULL" : si le message cité est supprimé, la réponse reste
-    # mais perd simplement sa citation, au lieu de bloquer la suppression.
+    # mais perd simplement sa citation.
     reply_to_id = Column(Integer, ForeignKey("room_messages.id", ondelete="SET NULL"), nullable=True)
-    # remote_side=[id] : indispensable pour une relation vers la même table,
-    # sinon SQLAlchemy ne sait pas quel côté est le message cité.
+    # remote_side=[id] : indispensable pour une relation vers la même table.
     reply_to = relationship("RoomMessage", remote_side=[id], uselist=False, foreign_keys=[reply_to_id])
 
-    created_at = Column(DateTime, default=datetime.now)
+    created_at = Column(DateTime, default=utc_now)
 
     room = relationship("Room", back_populates="messages")
     sender = relationship("User")
