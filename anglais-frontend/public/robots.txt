@@ -1,0 +1,7 @@
+User-agent: *
+Allow: /
+Disallow: /admin
+Disallow: /chat
+Disallow: /assessment
+
+Sitemap: https://www.internationalyee.com/sitemap.xml
