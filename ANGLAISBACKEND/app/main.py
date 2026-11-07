@@ -4,6 +4,7 @@ from alembic import command
 from alembic.config import Config
 from fastapi import FastAPI, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from app.api import public
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -88,6 +89,7 @@ app.include_router(translate.router)
 app.include_router(account_requests.router)
 app.include_router(admin.router)
 app.include_router(stats.router)
+app.include_router(public.router)
 app.include_router(rooms.router)
 app.include_router(assessment.router)
 
